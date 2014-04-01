@@ -9,7 +9,8 @@ from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
 
 class HDF5Dataset(DenseDesignMatrix):
     """Dense dataset loaded from an HDF5 file."""
-    def __init__(self, filename, X=None, topo_view=None, y=None, **kwargs):
+    def __init__(self, filename, X=None, topo_view=None, y=None,
+                 convert_to_one_hot=False, min_class=0, **kwargs):
         """
         Loads data and labels from HDF5 file.
 
@@ -36,3 +37,5 @@ class HDF5Dataset(DenseDesignMatrix):
 
         super(HDF5Dataset, self).__init__(X=X, topo_view=topo_view, y=y,
                                           **kwargs)
+        if convert_to_one_hot:
+            self.convert_to_one_hot(min_class)
