@@ -692,7 +692,9 @@ class AnnealedLearningRate(object):
         Returns the current desired learning rate according to the
         annealing schedule.
         """
-        return self._base * min(1, self._anneal_start / self._count)
+        val = self._base * min(1, self._anneal_start / self._count)
+        val = np.ndarray.astype(np.array(val), dtype='float32')
+        return val
 
 class ExponentialDecay(object):
     """
