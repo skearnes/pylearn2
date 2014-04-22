@@ -288,6 +288,7 @@ class BGD(TrainingAlgorithm):
                 on_load_batch(mapping.nest(data))
 
             self.before_step(model)
+            print("Processing batch")
             self.optimizer.minimize(*data)
             self.after_step(model)
             actual_batch_size = flat_data_specs[0].np_batch_size(data)
