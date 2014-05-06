@@ -37,7 +37,9 @@ from pylearn2.utils import safe_union
 from pylearn2.utils import safe_zip
 from pylearn2.utils import sharedX
 from pylearn2.utils import wraps
-from pylearn2.expr.nnet import kl
+
+from pylearn2.expr.nnet import (kl, compute_precision,
+                                    compute_recall, compute_f1)
 
 # Only to be used by the deprecation warning wrapper functions
 from pylearn2.costs.mlp import L1WeightDecay as _L1WD
@@ -69,6 +71,11 @@ class Layer(Model):
 
     May only belong to one MLP.
 
+    Parameters
+    ----------
+    kwargs : dict
+        Passed on to the superclass.
+
     Notes
     -----
     This is not currently a Block because as far as I know the Block interface
@@ -78,6 +85,7 @@ class Layer(Model):
     a block.
     """
 
+
     # When applying dropout to a layer's input, use this for masked values.
     # Usually this will be 0, but certain kinds of layers may want to override
     # this behaviour.
@@ -85,6 +93,8 @@ class Layer(Model):
 
     def get_mlp(self):
         """
+        Returns the MLP that this layer belongs to.
+
         Returns
         -------
         mlp : MLP
@@ -112,6 +122,9 @@ class Layer(Model):
 
     def get_monitoring_channels_from_state(self, state, target=None):
         """
+        Returns monitoring channels based on the values computed by
+        `fprop`.
+
         Parameters
         ----------
         state : member of self.output_space
@@ -152,20 +165,24 @@ class Layer(Model):
 
     def cost(self, Y, Y_hat):
         """
-        The cost of outputting Y_hat when the true output is Y.  Y_hat is
-        assumed to be the output of the same layer's fprop, and the
-        implementation may do things like look at the ancestors of Y_hat in the
-        theano graph. This is useful for, e.g., computing numerically stable
-        log probabilities as the cost when Y_hat is the probability.
+        The cost of outputting Y_hat when the true output is Y.
 
         Parameters
         ----------
-        Y : WRITEME
-        Y_hat : WRITEME
+        Y : theano.gof.Variable
+            The targets
+        Y_hat : theano.gof.Variable
+            The predictions.
+            Assumed to be the output of the layer's `fprop` method.
+            The implmentation is permitted to do things like look at the
+            ancestors of `Y_hat` in the theano graph. This is useful for
+            e.g. computing numerically stable *log* probabilities when
+            `Y_hat` is the *probability*.
 
         Returns
         -------
-        WRITEME
+        cost : theano.gof.Variable
+            A Theano scalar describing the cost.
         """
 
         raise NotImplementedError(str(type(self)) +
@@ -231,6 +248,8 @@ class Layer(Model):
 
     def get_biases(self):
         """
+        Returns the value of the biases of the layer.
+
         Returns
         -------
         biases : ndarray
@@ -356,11 +375,13 @@ class MLP(Layer):
         Number of "visible units" (input units). Equivalent to specifying
         `input_space=VectorSpace(dim=nvis)`.
     seed : WRITEME
+    kwargs : dict
+        Passed on to the superclass
     """
 
     def __init__(self, layers, batch_size=None, input_space=None,
-                 nvis=None, seed=None):
-        super(MLP, self).__init__()
+                 nvis=None, seed=None, **kwargs):
+        super(MLP, self).__init__(**kwargs)
 
         if seed is None:
             seed = [2013, 1, 4]
@@ -461,9 +482,14 @@ class MLP(Layer):
 
     def freeze(self, parameter_set):
         """
-        .. todo::
+        Freezes some of the parameters (new theano functions that implement
+        learning will not use them; existing theano functions will continue
+        to modify them).
 
-            WRITEME
+        Parameters
+        ----------
+        parameter_set : set
+            Set of parameters to freeze.
         """
 
         self.freeze_set = self.freeze_set.union(parameter_set)
@@ -510,12 +536,14 @@ class MLP(Layer):
 
         return rval
 
-    @wraps(Layer.get_monitoring_data_specs)
     def get_monitoring_data_specs(self):
         """
-        Notes
-        -----
-        In this case, we want the inputs and targets.
+        Returns data specs requiring both inputs and targets.
+
+        Returns
+        -------
+        data_specs: TODO
+            The data specifications for both inputs and targets.
         """
         space = CompositeSpace((self.get_input_space(),
                                 self.get_output_space()))
@@ -551,11 +579,11 @@ class MLP(Layer):
         for layer in self.layers:
             layer.set_batch_size(batch_size)
 
-    @wraps(Layer.censor_updates)
-    def censor_updates(self, updates):
+    @wraps(Layer._modify_updates)
+    def _modify_updates(self, updates):
 
         for layer in self.layers:
-            layer.censor_updates(updates)
+            layer.modify_updates(updates)
 
     @wraps(Layer.get_lr_scalers)
     def get_lr_scalers(self):
@@ -603,16 +631,8 @@ class MLP(Layer):
                       input_scales=None, per_example=True):
         """
         Returns the output of the MLP, when applying dropout to the input and
-        intermediate layers. Each input to each layer is randomly included or
-        excluded for each example. The probability of inclusion is independent
-        for each input and each example. Each layer uses
-        `default_input_include_prob` unless that layer's name appears as a key
-        in input_include_probs, in which case the input inclusion probability
-        is given by the corresponding value.
+        intermediate layers.
 
-        Each feature is also multiplied by a scale factor. The scale factor for
-        each layer's input scale is determined by the same scheme as the input
-        probabilities.
 
         Parameters
         ----------
@@ -625,6 +645,20 @@ class MLP(Layer):
         per_example : bool, optional
             Sample a different mask value for every example in a batch.
             Defaults to `True`. If `False`, sample one mask per mini-batch.
+
+
+        Notes
+        -----
+        Each input to each layer is randomly included or
+        excluded for each example. The probability of inclusion is independent
+        for each input and each example. Each layer uses
+        `default_input_include_prob` unless that layer's name appears as a key
+        in input_include_probs, in which case the input inclusion probability
+        is given by the corresponding value.
+
+        Each feature is also multiplied by a scale factor. The scale factor for
+        each layer's input scale is determined by the same scheme as the input
+        probabilities.
         """
 
         warnings.warn("dropout doesn't use fixed_var_descr so it won't work "
@@ -1215,8 +1249,8 @@ class Softmax(Layer):
         W = self.W
         return coeff * abs(W).sum()
 
-    @wraps(Layer.censor_updates)
-    def censor_updates(self, updates):
+    @wraps(Layer._modify_updates)
+    def _modify_updates(self, updates):
 
         if self.no_affine:
             return
@@ -1370,8 +1404,8 @@ class SoftmaxPool(Layer):
                                  str(self.mask_weights.shape))
             self.mask = sharedX(self.mask_weights)
 
-    @wraps(Layer.censor_updates)
-    def censor_updates(self, updates):
+    @wraps(Layer._modify_updates)
+    def _modify_updates(self, updates):
 
         # Patch old pickle files
         if not hasattr(self, 'mask_weights'):
@@ -1599,11 +1633,10 @@ class Linear(Layer):
     istdev : WRITEME
     sparse_init : WRITEME
     sparse_stdev : WRITEME
-    include_prob : float, optional
-        Probability of including a weight element in the set of weights \
-        initialized to U(-irange, irange). If not included it is \
-        initialized to 1.
-    init_bias : float or ndarray, optional
+    include_prob : float
+        Probability of including a weight element in the set of weights
+        initialized to U(-irange, irange). If not included it is
+        initialized to 0.
         Anything that can be broadcasted to a numpy vector.
         Provides the initial value of the biases of the model.
         When using this class as an output layer (specifically the Linear
@@ -1765,8 +1798,8 @@ class Linear(Layer):
                                  str(self.mask_weights.shape))
             self.mask = sharedX(self.mask_weights)
 
-    @wraps(Layer.censor_updates)
-    def censor_updates(self, updates):
+    @wraps(Layer._modify_updates)
+    def _modify_updates(self, updates):
 
         if self.mask_weights is not None:
             W, = self.transformer.get_params()
@@ -2008,6 +2041,11 @@ class Tanh(Linear):
     """
     A layer that performs an affine transformation of its (vectorial)
     input followed by a hyperbolic tangent elementwise nonlinearity.
+
+    Parameters
+    ----------
+    kwargs : dict
+        Keyword arguments to pass through to `Linear` class constructor.
     """
 
     @wraps(Layer.fprop)
@@ -2071,12 +2109,20 @@ class Sigmoid(Linear):
     @wraps(Layer.cost)
     def cost(self, Y, Y_hat):
         """
-        .. todo::
+        Returns a batch (vector) of
+        mean across units of KL divergence for each example.
 
-            WRITEME properly
+        Parameters
+        ----------
+        Y : theano.gof.Variable
+            Targets
+        Y_hat : theano.gof.Variable
+            Output of `fprop`
 
         mean across units, mean across batch of KL divergence
-        KL(P || Q) where P is defined by Y and Q is defined by Y_hat
+        Notes
+        -----
+        Uses KL(P || Q) where P is defined by Y and Q is defined by Y_hat
         Currently Y must be purely binary. If it's not, you'll still
         get the right gradient, but the value in the monitoring channel
         will be wrong.
@@ -2097,17 +2143,8 @@ class Sigmoid(Linear):
 
     def kl(self, Y, Y_hat):
         """
-        Warning: This function expects a sigmoid nonlinearity in the
-        output layer and it uses kl function under pylearn2/expr/nnet/.
-        Returns a batch (vector) of mean across units of KL
-        divergence for each example,
-        KL(P || Q) where P is defined by Y and Q is defined by Y_hat:
+        Computes the KL divergence.
 
-        p log p - p log q + (1-p) log (1-p) - (1-p) log (1-q)
-        For binary p, some terms drop out:
-        - p log q - (1-p) log (1-q)
-        - p log sigmoid(z) - (1-p) log sigmoid(-z)
-        p softplus(-z) + (1-p) softplus(z)
 
         Parameters
         ----------
@@ -2125,6 +2162,20 @@ class Sigmoid(Linear):
         -------
         ave : Variable
             average kl divergence between Y and Y_hat.
+
+        Notes
+        -----
+        Warning: This function expects a sigmoid nonlinearity in the
+        output layer and it uses kl function under pylearn2/expr/nnet/.
+        Returns a batch (vector) of mean across units of KL
+        divergence for each example,
+        KL(P || Q) where P is defined by Y and Q is defined by Y_hat:
+
+        p log p - p log q + (1-p) log (1-p) - (1-p) log (1-q)
+        For binary p, some terms drop out:
+        - p log q - (1-p) log (1-q)
+        - p log sigmoid(z) - (1-p) log sigmoid(-z)
+        p softplus(-z) + (1-p) softplus(z)
         """
         batch_axis = self.output_space.get_batch_axis()
         div = kl(Y=Y, Y_hat=Y_hat, batch_axis=batch_axis)
@@ -2132,9 +2183,20 @@ class Sigmoid(Linear):
 
     def get_detection_channels_from_state(self, state, target):
         """
-        .. todo::
+        Returns monitoring channels when using the layer to do detection
+        of binary events.
 
-            WRITEME
+        Parameters
+        ----------
+        state : theano.gof.Variable
+            Output of `fprop`
+        target : theano.gof.Variable
+            The targets from the dataset
+
+        Returns
+        -------
+        channels : OrderedDict
+            Dictionary mapping channel names to Theano channel values.
         """
 
         rval = OrderedDict()
@@ -2148,31 +2210,35 @@ class Sigmoid(Linear):
         y_hat = T.cast(y_hat, state.dtype)
         tp = (y * y_hat).sum()
         fp = ((1-y) * y_hat).sum()
-        precision = tp / T.maximum(1., tp + fp)
-        recall = tp / T.maximum(1., y.sum())
+
+        precision = compute_precision(tp, fp)
+        recall = compute_recall(y, fp)
+        f1 = compute_f1(precision, recall)
+
         rval['precision'] = precision
         rval['recall'] = recall
-        rval['f1'] = 2. * precision * recall / T.maximum(1, precision + recall)
+        rval['f1'] = f1
 
         tp = (y * y_hat).sum(axis=0)
         fp = ((1-y) * y_hat).sum(axis=0)
-        precision = tp / T.maximum(1., tp + fp)
 
-        rval['per_output_precision.max'] = precision.max()
-        rval['per_output_precision.mean'] = precision.mean()
-        rval['per_output_precision.min'] = precision.min()
+        precision = compute_precision(tp, fp)
 
-        recall = tp / T.maximum(1., y.sum(axis=0))
+        rval['per_output_precision_max'] = precision.max()
+        rval['per_output_precision_mean'] = precision.mean()
+        rval['per_output_precision_min'] = precision.min()
 
-        rval['per_output_recall.max'] = recall.max()
-        rval['per_output_recall.mean'] = recall.mean()
-        rval['per_output_recall.min'] = recall.min()
+        recall = compute_recall(y, tp)
 
-        f1 = 2. * precision * recall / T.maximum(1, precision + recall)
+        rval['per_output_recall_max'] = recall.max()
+        rval['per_output_recall_mean'] = recall.mean()
+        rval['per_output_recall_min'] = recall.min()
 
-        rval['per_output_f1.max'] = f1.max()
-        rval['per_output_f1.mean'] = f1.mean()
-        rval['per_output_f1.min'] = f1.min()
+        f1 = compute_f1(precision, recall)
+
+        rval['per_output_f1_max'] = f1.max()
+        rval['per_output_f1_mean'] = f1.mean()
+        rval['per_output_f1_min'] = f1.min()
 
         return rval
 
@@ -2194,6 +2260,7 @@ class Sigmoid(Linear):
                 # it's considered incorrect, so we max over columns.
                 incorrect = T.neq(target, prediction).max(axis=1)
                 rval['misclass'] = T.cast(incorrect, config.floatX).mean()
+
         return rval
 
 
@@ -2201,15 +2268,12 @@ class RectifiedLinear(Linear):
     """
     Rectified linear MLP layer (Glorot and Bengio 2011).
 
-    .. todo::
-
-        WRITEME properly
-
     Parameters
     ----------
-    left_slope : WRITEME
+    left_slope : float
+        The slope the line should have left of 0.
     kwargs : dict
-        WRITEME
+        Keyword arguments to pass to `Linear` class constructor.
     """
 
     def __init__(self, left_slope=0.0, **kwargs):
@@ -2241,7 +2305,7 @@ class Softplus(Linear):
     Parameters
     ----------
     kwargs : dict
-        WRITEME
+        Keyword arguments to `Linear` constructor.
     """
 
     def __init__(self, **kwargs):
@@ -2262,9 +2326,15 @@ class Softplus(Linear):
 
 class SpaceConverter(Layer):
     """
-    .. todo::
+    A Layer with no parameters that converts the input from
+    one space to another.
 
-        WRITEME
+    Parameters
+    ----------
+    layer_name : str
+        Name of the layer.
+    output_space : Space
+        The space to convert to.
     """
 
     def __init__(self, layer_name, output_space):
@@ -2306,8 +2376,51 @@ class ConvNonlinearity(object):
         p = linear_response
         return p
 
+    def _get_monitoring_channels_for_activations(self, state):
+        """
+        Computes the monitoring channels which does not require targets.
+
+        Parameters
+        ----------
+        state : member of self.output_space
+            A minibatch of states that this Layer took on during fprop.
+            Provided externally so that we don't need to make a second
+            expression for it. This helps keep the Theano graph smaller
+            so that function compilation runs faster.
+
+        Returns
+        -------
+        rval : OrderedDict
+            A dictionary mapping channel names to monitoring channels of
+            interest for this layer.
+        """
+        rval = OrderedDict({})
+
+        mx = state.max(axis=0)
+        mean = state.mean(axis=0)
+        mn = state.min(axis=0)
+        rg = mx - mn
+
+        rval['range_x_max_u'] = rg.max()
+        rval['range_x_mean_u'] = rg.mean()
+        rval['range_x_min_u'] = rg.min()
+
+        rval['max_x_max_u'] = mx.max()
+        rval['max_x_mean_u'] = mx.mean()
+        rval['max_x_min_u'] = mx.min()
+
+        rval['mean_x_max_u'] = mean.max()
+        rval['mean_x_mean_u'] = mean.mean()
+        rval['mean_x_min_u'] = mean.min()
+
+        rval['min_x_max_u'] = mn.max()
+        rval['min_x_mean_u'] = mn.mean()
+        rval['min_x_min_u'] = mn.min()
+
+        return rval
+
     def get_monitoring_channels_from_state(self, state, target,
-                                           orval=None, cost_fn=None):
+                                           cost_fn=None):
         """
         Override the default get_monitoring_channels_from_state function.
 
@@ -2322,8 +2435,6 @@ class ConvNonlinearity(object):
             Should be None unless this is the last layer.
             If specified, it should be a minibatch of targets for the
             last layer.
-        orval : Variable or None
-            This is the rval coming from the parent layer.
         cost_fn : theano computational graph or None
             This is the theano computational graph of a cost function.
 
@@ -2333,11 +2444,13 @@ class ConvNonlinearity(object):
             A dictionary mapping channel names to monitoring channels of
             interest for this layer.
         """
-        rval = OrderedDict()
+
+        rval = self._get_monitoring_channels_for_activations(state)
+
         return rval
 
 
-class LinearConvNonlinearity(ConvNonlinearity):
+class IdentityConvNonlinearity(ConvNonlinearity):
     """
     Linear convolutional nonlinearity class.
     """
@@ -2345,17 +2458,32 @@ class LinearConvNonlinearity(ConvNonlinearity):
         self.non_lin_name = "linear"
 
     @wraps(ConvNonlinearity.get_monitoring_channels_from_state)
-    def get_monitoring_channels_from_state(self, state, target,
-                                           cost_fn=False, rval=None):
-        rval = OrderedDict() if rval is None else rval
-        prediction = T.gt(state, 0.5)
-        incorrect = T.new(target, prediction).max(axis=1)
-        rval["misclass"] = T.cast(incorrect, config.floatX).mean()
+    def get_monitoring_channels_from_state(self,
+                                           state,
+                                           target,
+                                           cost_fn=False):
+
+        rval = super(IdentityConvNonlinearity,
+                     self).get_monitoring_channels_from_state(state,
+                                                              target,
+                                                              cost_fn)
+
+        if target is not None:
+            prediction = T.gt(state, 0.5)
+            incorrect = T.new(target, prediction).max(axis=1)
+            rval["misclass"] = T.cast(incorrect, config.floatX).mean()
+
+        return rval
 
 
 class RectifierConvNonlinearity(ConvNonlinearity):
     """
     A simple rectifier nonlinearity class for convolutional layers.
+
+    Parameters
+    ----------
+    left_slope : float
+        The slope of the left half of the activation function.
     """
     def __init__(self, left_slope=0.0):
         """
@@ -2381,16 +2509,15 @@ class RectifierConvNonlinearity(ConvNonlinearity):
 class SigmoidConvNonlinearity(ConvNonlinearity):
     """
     Sigmoid nonlinearity class for convolutional layers.
+
+    Parameters
+    ----------
+    monitor_style : str, optional
+        default monitor_style is "classification".
+        This determines whether to do classification or detection.
     """
 
     def __init__(self, monitor_style="classification"):
-        """
-        Parameters
-        ----------
-        monitor_style : str, optional
-            default monitor_style is "classification".
-            This determines whether to do classification or detection.
-        """
         assert monitor_style in ['classification', 'detection']
         self.monitor_style = monitor_style
         self.non_lin_name = "sigmoid"
@@ -2406,47 +2533,56 @@ class SigmoidConvNonlinearity(ConvNonlinearity):
 
     @wraps(ConvNonlinearity.get_monitoring_channels_from_state)
     def get_monitoring_channels_from_state(self, state, target,
-                                           rval=None, cost_fn=None):
-        orval = OrderedDict()
-        y_hat = state > 0.5
-        y = target > 0.5
-        wrong_bit = T.cast(T.neq(y, y_hat), state.dtype)
+                                           cost_fn=None):
 
-        orval['01_loss'] = wrong_bit.mean()
-        orval['kl'] = cost_fn(Y_hat=state, Y=target)
+        rval = super(SigmoidConvNonlinearity,
+                     self).get_monitoring_channels_from_state(state,
+                                                              target,
+                                                              cost_fn)
 
-        y = T.cast(y, state.dtype)
-        y_hat = T.cast(y_hat, state.dtype)
-        tp = (y * y_hat).sum()
-        fp = ((1-y) * y_hat).sum()
-        precision = tp / T.maximum(1., tp + fp)
-        recall = tp / T.maximum(1., y.sum())
+        if target is not None:
+            y_hat = state > 0.5
+            y = target > 0.5
 
-        orval['precision'] = precision
-        orval['recall'] = recall
-        orval['f1'] = (2. * precision * recall /
-                       T.maximum(1, precision + recall))
+            wrong_bit = T.cast(T.neq(y, y_hat), state.dtype)
 
-        tp = (y * y_hat).sum(axis=[0, 1])
-        fp = ((1-y) * y_hat).sum(axis=[0, 1])
-        precision = tp / T.maximum(1., tp + fp)
+            rval['01_loss'] = wrong_bit.mean()
+            rval['kl'] = cost_fn(Y_hat=state, Y=target)
 
-        orval['per_output_precision.max'] = precision.max()
-        orval['per_output_precision.mean'] = precision.mean()
-        orval['per_output_precision.min'] = precision.min()
+            y = T.cast(y, state.dtype)
+            y_hat = T.cast(y_hat, state.dtype)
+            tp = (y * y_hat).sum()
+            fp = ((1-y) * y_hat).sum()
 
-        recall = tp / T.maximum(1., y.sum(axis=[0, 1]))
+            precision = compute_precision(tp, fp)
+            recall = compute_recall(y, tp)
+            f1 = compute_f1(precision, recall)
 
-        orval['per_output_recall.max'] = recall.max()
-        orval['per_output_recall.mean'] = recall.mean()
-        orval['per_output_recall.min'] = recall.min()
+            rval['precision'] = precision
+            rval['recall'] = recall
+            rval['f1'] = f1
 
-        f1 = 2. * precision * recall / T.maximum(1, precision + recall)
+            tp = (y * y_hat).sum(axis=[0, 1])
+            fp = ((1-y) * y_hat).sum(axis=[0, 1])
 
-        orval['per_output_f1.max'] = f1.max()
-        orval['per_output_f1.mean'] = f1.mean()
-        orval['per_output_f1.min'] = f1.min()
-        rval.update(orval)
+            precision = compute_precision(tp, fp)
+
+            rval['per_output_precision_max'] = precision.max()
+            rval['per_output_precision_mean'] = precision.mean()
+            rval['per_output_precision_min'] = precision.min()
+
+            recall = compute_recall(y, tp)
+
+            rval['per_output_recall_max'] = recall.max()
+            rval['per_output_recall_mean'] = recall.mean()
+            rval['per_output_recall_min'] = recall.min()
+
+            f1 = compute_f1(precision, recall)
+
+            rval['per_output_f1_max'] = f1.max()
+            rval['per_output_f1_mean'] = f1.mean()
+            rval['per_output_f1_min'] = f1.min()
+
         return rval
 
 
@@ -2711,8 +2847,8 @@ class ConvElemwise(Layer):
         self.initialize_output_space()
 
 
-    @wraps(Layer.censor_updates)
-    def censor_updates(self, updates):
+    @wraps(Layer._modify_updates)
+    def _modify_updates(self, updates):
         if self.max_kernel_norm is not None:
             W, = self.transformer.get_params()
             if W in updates:
@@ -2800,17 +2936,20 @@ class ConvElemwise(Layer):
 
         return np.transpose(raw, (outp, rows, cols, inp))
 
+
+    @wraps(Layer.get_monitoring_channels_from_state)
     def get_monitoring_channels_from_state(self, state, target=None):
 
-        rval = super(ConvElemwise,
-                     self).get_monitoring_channels_from_state(state, target)
+        rval = super(ConvElemwise, self).get_monitoring_channels_from_state(state,
+                                                                            target)
 
-        if target is not None:
-            cst = self.cost
-            rval = self.nonlin.get_monitoring_channels_from_state(state,
-                                                                  target,
-                                                                  rval=rval,
-                                                                  cost_fn=cst)
+        cst = self.cost
+        orval = self.nonlin.get_monitoring_channels_from_state(state,
+                                                               target,
+                                                               cost_fn=cst)
+
+        rval.update(orval)
+
         return rval
 
     @wraps(Layer.get_monitoring_channels)
@@ -2885,6 +3024,23 @@ class ConvElemwise(Layer):
 
     def cost(self, Y, Y_hat):
         """
+        Cost for convnets is hardcoded to be the cost for sigmoids.
+        TODO: move the cost into the non-linearity class.
+
+        Parameters
+        ----------
+        Y : theano.gof.Variable
+            Output of `fprop`
+        Y_hat : theano.gof.Variable
+            Targets
+
+        Returns
+        -------
+        cost : theano.gof.Variable
+            0-D tensor describing the cost
+
+        Notes
+        -----
         Cost mean across units, mean across batch of KL divergence
         KL(P || Q) where P is defined by Y and Q is defined by Y_hat
         KL(P || Q) = p log p - p log q + (1-p) log (1-p) - (1-p) log (1-q)
@@ -3000,6 +3156,7 @@ class ConvRectifiedLinear(ConvElemwise):
             raise AssertionError("You should specify either irange or "
                                  "sparse_init when calling the constructor of "
                                  "ConvRectifiedLinear and not both.")
+
         #Alias the variables for pep8
         mkn = max_kernel_norm
         dn = detector_normalization
@@ -3434,10 +3591,10 @@ class LinearGaussian(Linear):
         return (0.5 * T.dot(T.sqr(Y-Y_hat), self.beta).mean() -
                 0.5 * T.log(self.beta).sum())
 
-    @wraps(Layer.censor_updates)
-    def censor_updates(self, updates):
+    @wraps(Layer._modify_updates)
+    def _modify_updates(self, updates):
 
-        super(LinearGaussian, self).censor_updates(updates)
+        super(LinearGaussian, self)._modify_updates(updates)
 
         if self.beta in updates:
             updates[self.beta] = T.clip(updates[self.beta],
@@ -3540,17 +3697,11 @@ class PretrainedLayer(Layer):
     A layer whose weights are initialized, and optionally fixed,
     based on prior training.
 
-    .. todo::
-
-        WRITEME properly
-
     Parameters
     ----------
-    layer_name : WRITEME
     layer_content : Model
-        A Model that implements "upward_pass", such as an RBM or an
-        Autoencoder
-    freeze_params : bool, optional
+        Should implement "upward_pass" (RBM and Autoencoder do this)
+    freeze_params: bool
         If True, regard layer_conent's parameters as fixed
         If False, they become parameters of this layer and can be
         fine-tuned to optimize the MLP's cost function.
@@ -3598,14 +3749,12 @@ class CompositeLayer(Layer):
     """
     A Layer that runs several simpler layers in parallel.
 
-    .. todo::
-
-        WRITEME properly
-
     Parameters
     ----------
-    layer_name : WRITEME
-    layers: a list or tuple of Layers.
+    layer_name : str
+        Name for the layer
+    layers : list or tuple
+        Layers to be run in parallel.
     """
 
     def __init__(self, layer_name, layers):
@@ -3690,6 +3839,10 @@ class FlattenerLayer(Layer):
         self.raw_layer.set_input_space(space)
         total_dim = self.raw_layer.get_output_space().get_total_dimension()
         self.output_space = VectorSpace(total_dim)
+
+    @wraps(Layer.get_input_space)
+    def get_input_space(self):
+        return self.raw_layer.get_input_space()
 
     @wraps(Layer.get_params)
     def get_params(self):

@@ -32,6 +32,11 @@ class ZCA_Dataset(DenseDesignMatrix):
     """
 
     def get_test_set(self):
+        """
+        .. todo::
+
+            WRITEME
+        """
         yaml = self.preprocessed_dataset.yaml_src
         yaml = yaml.replace('train', 'test')
         args = {}
@@ -49,7 +54,11 @@ class ZCA_Dataset(DenseDesignMatrix):
                  start=None,
                  stop=None,
                  axes=['b', 0, 1, 'c']):
+        """
+        .. todo::
 
+            WRITEME
+        """
         self.args = locals()
 
         self.preprocessed_dataset = preprocessed_dataset
@@ -91,7 +100,7 @@ class ZCA_Dataset(DenseDesignMatrix):
         #self.mn = self.X.min()
         #self.mx = self.X.max()
 
-        if preprocessor.inv_P_ is None:
+        if getattr(preprocessor, "inv_P_", None) is None:
             warnings.warn("ZCA preprocessor.inv_P_ was none. Computing "
                           "inverse of preprocessor.P_ now. This will take "
                           "some time. For efficiency, it is recommended that "
@@ -104,10 +113,19 @@ class ZCA_Dataset(DenseDesignMatrix):
         self.view_converter.set_axes(axes)
 
     def has_targets(self):
+        """
+        .. todo::
+
+            WRITEME
+        """
         return self.preprocessed_dataset.has_targets()
 
     def adjust_for_viewer(self, X):
+        """
+        .. todo::
 
+            WRITEME
+        """
         #rval = X - self.mn
         #rval /= (self.mx-self.mn)
 
@@ -123,7 +141,11 @@ class ZCA_Dataset(DenseDesignMatrix):
         return rval
 
     def adjust_to_be_viewed_with(self, X, other, per_example=False):
+        """
+        .. todo::
 
+            WRITEME
+        """
         #rval = X - self.mn
         #rval /= (self.mx-self.mn)
 
@@ -145,7 +167,11 @@ class ZCA_Dataset(DenseDesignMatrix):
         return rval
 
     def mapback_for_viewer(self, X):
+        """
+        .. todo::
 
+            WRITEME
+        """
         assert X.ndim == 2
         rval = self.preprocessor.inverse(X)
         rval = self.preprocessed_dataset.adjust_for_viewer(rval)
@@ -153,4 +179,9 @@ class ZCA_Dataset(DenseDesignMatrix):
         return rval
 
     def mapback(self, X):
+        """
+        .. todo::
+
+            WRITEME
+        """
         return self.preprocessor.inverse(X)

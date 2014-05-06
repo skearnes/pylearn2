@@ -20,8 +20,14 @@ def softmax_numpy(x):
 
         WRITEME properly
 
-    x: a matrix
-    returns a vector, with rval[i] being the softmax of row i of x
+    Parameters
+    ----------
+    x : matrix
+
+    Returns
+    -------
+    rval : vector
+        rval[i] is the softmax of row i of x
     """
     stable_x = (x.T - x.max(axis=1)).T
     numer = np.exp(stable_x)
@@ -33,8 +39,17 @@ def pseudoinverse_softmax_numpy(x):
 
         WRITEME properly
 
-    x: a vector
-    returns y, such that softmax(y) = x
+    Parameters
+    ----------
+    x : vector
+
+    Returns
+    -------
+    y : vector
+        softmax(y) = x
+
+    Notes
+    -----
     This problem is underdetermined, so we also impose y.mean() = 0
     """
     rval = np.log(x)
@@ -60,6 +75,10 @@ def inverse_sigmoid_numpy(x):
 
 def arg_of_softmax(Y_hat):
     """
+    .. todo::
+
+        WRITEME properly
+
     Parameters
     ----------
     Y_hat : Variable
@@ -146,6 +165,10 @@ def kl(Y, Y_hat, batch_axis):
 
 def softmax_ratio(numer, denom):
     """
+    .. todo::
+
+        WRITEME properly
+
     Parameters
     ----------
     numer : Variable
@@ -169,3 +192,66 @@ def softmax_ratio(numer, denom):
     new_den = (T.exp(numer_Z).sum(axis=1).dimshuffle(0, 'x'))
 
     return new_num / new_den
+
+def compute_precision(tp, fp):
+    """
+    Computes the precision for the binary decisions.
+    Computed as tp/(tp + fp).
+
+    Parameters
+    ----------
+    tp : Variable
+        True positives.
+    fp : Variable
+        False positives.
+
+    Returns
+    -------
+    precision : Variable
+        Precision of the binary classifications.
+    """
+    precision = tp / T.maximum(1., tp + fp)
+    return precision
+
+def compute_recall(y, tp):
+    """
+    Computes the recall for the binary classification.
+
+    Parameters
+    ----------
+    y : Variable
+        Targets for the binary classifications.
+    tp : Variable
+        True positives.
+
+    Returns
+    -------
+    recall : Variable
+        Recall for the binary classification.
+    """
+    recall = tp / T.maximum(1., y.sum(axis=0))
+    return recall
+
+def compute_f1(precision, recall):
+    """
+    Computes the f1 score for the binary classification.
+    Computed as,
+
+    f1 = 2 * precision * recall / (precision + recall)
+
+    Parameters
+    ----------
+    precision : Variable
+        Precision score of the binary decisions.
+    recall : Variable
+        Recall score of the binary decisions.
+
+    Returns
+    -------
+    f1 : Variable
+        f1 score for the binary decisions.
+    """
+    f1 = (2. * precision * recall /
+            T.maximum(1, precision + recall))
+    return f1
+
