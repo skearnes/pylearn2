@@ -3,68 +3,57 @@ HDF5 dataset tests.
 """
 import numpy as np
 import os
-import unittest
+import tempfile
 
 from pylearn2.config import yaml_parse
-from pylearn2.testing.skip import skip_if_no_data, skip_if_no_h5py
+from pylearn2.testing.datasets import random_one_hot_dense_design_matrix
+from pylearn2.testing.skip import skip_if_no_h5py
 
 
-class TestHDF5Dataset(unittest.TestCase):
+def test_hdf5_dataset():
     """Trains the model described in scripts/papers/maxout/mnist_pi.yaml
     using HDF5 datasets and a max_epochs termination criterion."""
-    def setUp(self):
-        skip_if_no_h5py()
-        import h5py
-        skip_if_no_data()
-        from pylearn2.datasets.mnist import MNIST
+    skip_if_no_h5py()
+    import h5py
 
-        # save MNIST data to HDF5
-        train = MNIST(which_set='train', one_hot=0, start=0, stop=1000)
-        y = np.squeeze(train.y)
-        train.y = y
-        train.convert_to_one_hot()
-        for name, dataset in [('train', train)]:
-            with h5py.File("{}.h5".format(name), "w") as f:
-                f.create_dataset('X', data=dataset.get_design_matrix())
-                f.create_dataset('topo_view',
-                                 data=dataset.get_topological_view())
-                f.create_dataset('y', data=dataset.get_targets())
+    # save random data to HDF5
+    handle, filename = tempfile.mkstemp()
+    dataset = random_one_hot_dense_design_matrix(np.random.RandomState(1),
+                                                 num_examples=1000, dim=50,
+                                                 num_classes=3)
+    with h5py.File(filename, 'w') as f:
+        f.create_dataset('X', data=dataset.get_design_matrix())
+        f.create_dataset('y', data=dataset.get_targets())
 
-        # instantiate Train object
-        self.train = yaml_parse.load(trainer_yaml)
+    # instantiate Train object
+    trainer = yaml_parse.load(trainer_yaml % {'filename': filename})
+    trainer.main_loop()
 
-    def test_hdf5(self):
-        """Run trainer main loop."""
-        self.train.main_loop()
-
-    def tearDown(self):
-        os.remove("train.h5")
+    # cleanup
+    os.remove(filename)
 
 # trainer is a modified version of scripts/papers/maxout/mnist_pi.yaml
 trainer_yaml = """
 !obj:pylearn2.train.Train {
     dataset: &train !obj:pylearn2.datasets.hdf5.HDF5Dataset {
-        filename: 'train.h5',
+        filename: %(filename)s,
         X: 'X',
         y: 'y',
     },
     model: !obj:pylearn2.models.mlp.MLP {
         layers: [
-                 !obj:pylearn2.models.maxout.Maxout {
+                 !obj:pylearn2.models.mlp.Sigmoid {
                      layer_name: 'h0',
-                     num_units: 10,
-                     num_pieces: 2,
+                     dim: 25,
                      irange: .005,
-                     max_col_norm: 1.9365,
                  },
                  !obj:pylearn2.models.mlp.Softmax {
-                     max_col_norm: 1.9365,
                      layer_name: 'y',
-                     n_classes: 10,
-                     irange: .005
+                     n_classes: 3,
+                     irange: 0.
                  }
                 ],
-        nvis: 784,
+        nvis: 50,
     },
     algorithm: !obj:pylearn2.training_algorithms.sgd.SGD {
         batch_size: 100,

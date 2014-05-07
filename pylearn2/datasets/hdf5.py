@@ -59,8 +59,8 @@ class HDF5Dataset(DenseDesignMatrix):
                  topo=None, targets=None, rng=None, data_specs=None,
                  return_tuple=False):
         iterator = super(HDF5Dataset, self).iterator(mode, batch_size,
-                                                     num_batches, topo, targets,
-                                                     rng, data_specs,
+                                                     num_batches, topo,
+                                                     targets, rng, data_specs,
                                                      return_tuple)
         iterator.__class__ = HDF5DatasetIterator
         return iterator
