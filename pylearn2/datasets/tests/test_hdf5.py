@@ -1,7 +1,12 @@
+"""
+HDF5 dataset tests.
+"""
+import numpy as np
+import os
+import unittest
+
 from pylearn2.config import yaml_parse
 from pylearn2.testing.skip import skip_if_no_data, skip_if_no_h5py
-import unittest
-import os
 
 
 class TestHDF5Dataset(unittest.TestCase):
@@ -14,7 +19,10 @@ class TestHDF5Dataset(unittest.TestCase):
         from pylearn2.datasets.mnist import MNIST
 
         # save MNIST data to HDF5
-        train = MNIST(which_set='train', one_hot=1, start=0, stop=100)
+        train = MNIST(which_set='train', one_hot=0, start=0, stop=1000)
+        y = np.squeeze(train.y)
+        train.y = y
+        train.convert_to_one_hot()
         for name, dataset in [('train', train)]:
             with h5py.File("{}.h5".format(name), "w") as f:
                 f.create_dataset('X', data=dataset.get_design_matrix())
