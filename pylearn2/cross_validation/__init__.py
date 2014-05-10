@@ -59,9 +59,16 @@ class TrainCV(object):
                         this_model.layers[i] = layer.select_fold(k)
 
             # construct an isolated Train object
-            trainer = Train(datasets['train'], this_model, algorithm,
-                            this_save_path, this_save_freq, extensions,
-                            allow_overwrite)
+            try:
+                assert isinstance(datasets, dict)
+                trainer = Train(datasets['train'], this_model, algorithm,
+                                this_save_path, this_save_freq, extensions,
+                                allow_overwrite)
+            except AssertionError:
+                raise AssertionError("Dataset iterator must be a dict with " +
+                                     "dataset names (e.g. 'train') as keys.")
+            except KeyError:
+                raise KeyError("Dataset iterator must yield training data.")
 
             # no shared references between trainers are allowed
             trainer = deepcopy(trainer)
@@ -69,6 +76,7 @@ class TrainCV(object):
             trainers.append(trainer)
         self.trainers = trainers
         self.save_path = save_path
+        self.allow_overwrite = allow_overwrite
 
     def main_loop(self, time_budget=None):
         """
@@ -90,9 +98,15 @@ class TrainCV(object):
         try:
             models = []
             for trainer in self.trainers:
+                for extension in trainer.extensions:
+                    extension.on_save(trainer.model, trainer.dataset,
+                                      trainer.algorithm)
                 trainer.dataset._serialization_guard = SerializationGuard()
                 models.append(trainer.model)
-            serial.save(self.save_path, models, on_overwrite='backup')
+            if self.save_path is not None:
+                if not self.allow_overwrite and os.path.exists(self.save_path):
+                    raise IOError("Trying to overwrite file when not allowed.")
+                serial.save(self.save_path, models, on_overwrite='backup')
         finally:
             for trainer in self.trainers:
                 trainer.dataset._serialization_guard = None
