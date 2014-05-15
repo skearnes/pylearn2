@@ -17,12 +17,15 @@ gauranteed by default copy.
 
 """
 
-import os
-import time
 import atexit
 import logging
-from pylearn2.utils import string_utils
+import os
+import stat
+import time
+
 import theano.gof.compilelock as compilelock
+
+from pylearn2.utils import string_utils
 
 
 log = logging.getLogger(__name__)
@@ -112,7 +115,7 @@ class LocalDatasetCache:
 
             # Check that there is enough space to cache the file
             if not self.check_enough_space(remote_name, local_name):
-                log.warning("Not enough free space : file %s not cached" %
+                log.warning("File %s not cached: Not enough free space" %
                             remote_name)
                 self.release_writelock()
                 return filename
@@ -121,7 +124,28 @@ class LocalDatasetCache:
             self.copy_from_server_to_local(remote_name, local_name)
             log.info("File %s has been locally cached to %s" %
                      (remote_name, local_name))
-
+        elif os.path.getmtime(remote_name) > os.path.getmtime(local_name):
+            log.warning("File %s in cache will not be used: The remote file "
+                        "(modified %s) is newer than the locally cached file "
+                        "%s (modified %s)."
+                        % (remote_name,
+                           time.strftime(
+                               '%Y-%m-%d %H:%M:%S',
+                               time.localtime(os.path.getmtime(remote_name))
+                           ),
+                           local_name,
+                           time.strftime(
+                               '%Y-%m-%d %H:%M:%S',
+                               time.localtime(os.path.getmtime(local_name))
+                           )))
+            return filename
+        elif os.path.getsize(local_name) != os.path.getsize(remote_name):
+            log.warning("File %s not cached: The remote file (%d bytes) is of "
+                        "a different size than the locally cached file %s "
+                        "(%d bytes). The local cache might be corrupt."
+                        % (remote_name, os.path.getsize(remote_name),
+                           local_name, os.path.getsize(local_name)))
+            return filename
         else:
             log.debug("File %s has previously been locally cached to %s" %
                       (remote_name, local_name))
@@ -155,6 +179,37 @@ class LocalDatasetCache:
 
         command = 'cp ' + remote_fname + ' ' + local_fname
         os.system(command)
+        # Copy the original group id and file permission
+        st = os.stat(remote_fname)
+        os.chmod(local_fname, st.st_mode)
+        # If the user have read access to the data, but not a member
+        # of the group, he can't set the group. So we must catch the
+        # exception. But we still want to do this, for directory where
+        # only member of the group can read that data.
+        try:
+            os.chown(local_fname, -1, st.st_gid)
+        except OSError:
+            pass
+
+        # Need to give group write permission to the folders
+        # For the locking mechanism
+        # Try to set the original group as above
+        dirs = os.path.dirname(local_fname).replace(self.dataset_local_dir, '')
+        sep = dirs.split(os.path.sep)
+        if sep[0] == "":
+            sep = sep[1:]
+        for i in range(len(sep)):
+            orig_p = os.path.join(self.dataset_remote_dir, *sep[:i + 1])
+            new_p = os.path.join(self.dataset_local_dir, *sep[:i + 1])
+            orig_st = os.stat(orig_p)
+            new_st = os.stat(new_p)
+            if not new_st.st_mode & stat.S_IWGRP:
+                os.chmod(new_p, new_st.st_mode | stat.S_IWGRP)
+            if orig_st.st_gid != new_st.st_gid:
+                try:
+                    os.chown(new_p, -1, orig_st.st_gid)
+                except OSError:
+                    pass
 
     def disk_usage(self, path):
         """
