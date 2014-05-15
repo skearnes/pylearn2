@@ -5,6 +5,7 @@ from pylearn2.config import yaml_parse
 
 
 def test_ensemble_average():
+    """Test EnsembleAverage."""
     trainer = yaml_parse.load(test_ensemble_average_yaml)
     trainer.main_loop()
 
@@ -20,7 +21,7 @@ test_ensemble_average_yaml = """
     model: !obj:pylearn2.models.mlp.MLP {
         nvis: 10,
         layers: [
-            !obj:pylearn2.models.mlp.CompositeLayer {
+            !obj:pylearn2.models.ensemble.EnsembleAverage {
                 layer_name: ensemble,
                 layers: [
                     !obj:pylearn2.models.mlp.MLP {
@@ -55,11 +56,11 @@ test_ensemble_average_yaml = """
                     },
                 ],
             },
-            !obj:pylearn2.models.mlp.Softmax {
-                layer_name: y,
-                n_classes: 3,
-                irange: 0.0,
-            },
+            #!obj:pylearn2.models.mlp.Softmax {
+            #    layer_name: y,
+            #    n_classes: 3,
+            #    irange: 0.0,
+            #},
         ],
     },
     algorithm: !obj:pylearn2.training_algorithms.bgd.BGD {
@@ -68,7 +69,7 @@ test_ensemble_average_yaml = """
         conjugate: 1,
         termination_criterion:
             !obj:pylearn2.termination_criteria.EpochCounter {
-                    max_epochs: 100,
+                    max_epochs: 1,
         },
         monitoring_dataset: *train,
     },
