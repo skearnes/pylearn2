@@ -18,24 +18,18 @@ class TrainEnsemble(object):
     on the combined training and validation sets. Test set performance is
     only calculated for the ensemble model.
 
-    The ensemble model is a Train (or TrainCV) object with the model
-    defined by an MLP containing an EnsembleLayer.
-
-    How would models trained on different datasets be combined? By making
-    a new dataset with two sets of features and using the inputs_to_layers
-    functionality of EnsembleLayer.
+    The ensemble model is a Train object with the model defined by an MLP
+    containing an EnsembleLayer.
 
     Parameters
     ----------
-    trainers : list
-        Train or TrainCV children.
     ensemble : str or None
         Ensemble type. If None, defaults to 'average'.
     n_best : int or None
         Number of models to include in the ensemble. If None, all models
         are included.
     kwargs : dict
-        Keyword arguments for ensemble Train or TrainCV object.
+        Keyword arguments for ensemble Train object.
     """
     def __init__(self, trainers, ensemble=None, n_best=None, **kwargs):
         self.trainers = trainers
@@ -63,4 +57,4 @@ class TrainEnsemble(object):
 
     def build_ensemble(self):
         """Construct ensemble model."""
-        
+
