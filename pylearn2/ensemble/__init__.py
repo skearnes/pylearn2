@@ -29,25 +29,20 @@ class TrainEnsemble(object):
     ----------
     trainers : list
         Train or TrainCV children.
-    algorithm : TrainingAlgorithm
-        Training algorithm.
-    save_path : str or None
-        Output filename for the model.
-    save_freq : int
-        Save frequency, in epochs.
-    extensions : list or None
-        Training extensions.
-    allow_overwrite : bool
-        Whether to overwrite a pre-existing output file matching save_path.
+    ensemble : str or None
+        Ensemble type. If None, defaults to 'average'.
+    n_best : int or None
+        Number of models to include in the ensemble. If None, all models
+        are included.
+    kwargs : dict
+        Keyword arguments for ensemble Train or TrainCV object.
     """
-    def __init__(self, trainers, algorithm=None, save_path=None, save_freq=0,
-                 extensions=None, allow_overwrite=True):
+    def __init__(self, trainers, ensemble=None, n_best=None, **kwargs):
         self.trainers = trainers
-        self.algorithm = algorithm
-        self.save_path = save_path
-        self.save_freq = save_freq
-        self.extensions = extensions
-        self.allow_overwrite = allow_overwrite
+        self.n_best = n_best
+        self.ensemble_kwargs = kwargs
+        self.ensemble = ensemble
+        self.ensemble_trainer = None
 
     def main_loop(self, time_budget=None):
         """
@@ -62,4 +57,10 @@ class TrainEnsemble(object):
         for trainer in self.trainers:
             trainer.main_loop(time_budget)
 
-        # select best models
+        # construct and train ensemble model
+        self.build_ensemble()
+        self.ensemble_trainer.main_loop(time_budget)
+
+    def build_ensemble(self):
+        """Construct ensemble model."""
+        
