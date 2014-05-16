@@ -4,14 +4,14 @@ Tests for ensemble models.
 from pylearn2.config import yaml_parse
 
 
-def test():
-    trainer = yaml_parse.load(test_yaml)
-    trainer.main_loop()
-
-#def test_ensemble_average():
-#    """Test EnsembleAverage."""
-#    trainer = yaml_parse.load(test_ensemble_average_yaml)
+#def test():
+#    trainer = yaml_parse.load(test_yaml)
 #    trainer.main_loop()
+
+def test_ensemble_average():
+    """Test EnsembleAverage."""
+    trainer = yaml_parse.load(test_ensemble_average_yaml)
+    trainer.main_loop()
 
 test_ensemble_average_yaml = """
 !obj:pylearn2.train.Train {
@@ -25,7 +25,7 @@ test_ensemble_average_yaml = """
     model: !obj:pylearn2.models.mlp.MLP {
         nvis: 10,
         layers: [
-            !obj:pylearn2.models.ensemble.EnsembleAverage {
+            !obj:pylearn2.models.ensemble.GeometricMean {
                 layer_name: ensemble,
                 layers: [
                     !obj:pylearn2.models.mlp.MLP {
@@ -60,11 +60,6 @@ test_ensemble_average_yaml = """
                     },
                 ],
             },
-            #!obj:pylearn2.models.mlp.Softmax {
-            #    layer_name: y,
-            #    n_classes: 3,
-            #    irange: 0.0,
-            #},
         ],
     },
     algorithm: !obj:pylearn2.training_algorithms.bgd.BGD {

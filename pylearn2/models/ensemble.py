@@ -81,6 +81,17 @@ class Ensemble(CompositeLayer):
         """
         self.output_space = space
 
+    def fprop(self, state_below):
+        """
+        Transform input.
+
+        Parameters
+        ----------
+        state_below : Space
+            Batch of examples to propogate through each model.
+        """
+        raise NotImplementedError('fprop')
+
     def cost(self, Y, Y_hat):
         """
         Calculate the cost of predicting Y_hat when the true value is Y.
