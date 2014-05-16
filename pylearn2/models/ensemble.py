@@ -124,9 +124,6 @@ class EnsembleAverage(Ensemble):
         """
         components = super(EnsembleAverage, self).fprop(state_below)
         rval = T.mean(components, axis=0)
-        if issubclass(self.output_type, Softmax):
-            z = T.log(rval)
-            rval = T.nnet.softmax(z)
         return rval
 
     def cost(self, Y, Y_hat):
@@ -140,6 +137,12 @@ class EnsembleAverage(Ensemble):
         Y_hat : theano.gof.Variable
             Predicted value(s).
         """
-        components = tuple(layer.cost(Y, Y_hat) for layer in self.layers)
-        rval = T.mean(components, axis=0)
+        if issubclass(self.output_type, Softmax):
+            log_prob = T.log(Y_hat)
+            log_prob_of = (Y * log_prob).sum(axis=1)
+            assert log_prob_of.ndim == 1
+            rval = log_prob_of.mean()
+        else:
+            components = tuple(layer.cost(Y, Y_hat) for layer in self.layers)
+            rval = T.mean(components, axis=0)
         return rval
