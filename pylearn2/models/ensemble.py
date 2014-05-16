@@ -13,6 +13,7 @@ parallel layers.
 __author__ = "Steven Kearnes"
 __copyright__ = "Copyright 2014, Stanford University"
 __license__ = "3-clause BSD"
+__maintainer__ = "Steven Kearnes"
 
 from theano import tensor as T
 
@@ -20,7 +21,7 @@ from pylearn2.models.mlp import (CompositeLayer, geometric_mean_prediction,
                                  MLP, Softmax)
 
 
-class Ensemble(CompositeLayer):
+class EnsembleLayer(CompositeLayer):
     """
     Subclass of CompositeLayer that does special handling of output,
     taking advantage of the assumed relationships between the parallel
@@ -37,7 +38,8 @@ class Ensemble(CompositeLayer):
         Mapping for inputs to component layers.
     """
     def __init__(self, layer_name, layers, inputs_to_layers=None):
-        super(Ensemble, self).__init__(layer_name, layers, inputs_to_layers)
+        super(EnsembleLayer, self).__init__(layer_name, layers,
+                                            inputs_to_layers)
 
         # check that component layer output classes match
         if isinstance(layers[0], MLP):
@@ -67,7 +69,7 @@ class Ensemble(CompositeLayer):
         space : Space
             Input space.
         """
-        super(Ensemble, self).set_input_space(space)
+        super(EnsembleLayer, self).set_input_space(space)
         self.set_output_space()
 
     def set_output_space(self):
@@ -101,7 +103,7 @@ class Ensemble(CompositeLayer):
         return rval
 
 
-class GeometricMean(Ensemble):
+class GeometricMean(EnsembleLayer):
     """
     Ensemble layer that outputs the geometric mean of the outputs from the
     composite layer.
