@@ -9,14 +9,15 @@ wrapper (by flattening their output), these classes explicitly acknowledge
 and take advantage of the relationships between the predictions of the
 parallel layers.
 """
-from theano import tensor as T
-
-from pylearn2.models.mlp import (CompositeLayer, geometric_mean_prediction,
-                                 MLP, Softmax)
 
 __author__ = "Steven Kearnes"
 __copyright__ = "Copyright 2014, Stanford University"
 __license__ = "3-clause BSD"
+
+from theano import tensor as T
+
+from pylearn2.models.mlp import (CompositeLayer, geometric_mean_prediction,
+                                 MLP, Softmax)
 
 
 class Ensemble(CompositeLayer):
