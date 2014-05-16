@@ -11,7 +11,8 @@ parallel layers.
 """
 from theano import tensor as T
 
-from pylearn2.models.mlp import CompositeLayer, MLP, Softmax
+from pylearn2.models.mlp import (CompositeLayer, geometric_mean_prediction,
+                                 MLP, Softmax)
 
 __author__ = "Steven Kearnes"
 __copyright__ = "Copyright 2014, Stanford University"
@@ -22,9 +23,8 @@ class Ensemble(CompositeLayer):
     """
     Subclass of CompositeLayer that does special handling of output,
     taking advantage of the assumed relationships between the parallel
-    layers.
-
-    Note that the output spaces of each component layer should match.
+    layers. This implies that the output classes and output spaces of each
+    component layer should match.
 
     Parameters
     ----------
@@ -84,6 +84,9 @@ class Ensemble(CompositeLayer):
     def cost(self, Y, Y_hat):
         """
         Calculate the cost of predicting Y_hat when the true value is Y.
+        Since the component layers are expected to have the same output
+        class, the cost for the Ensemble is the same as the cost for one of
+        the component layers.
 
         Parameters
         ----------
@@ -92,12 +95,13 @@ class Ensemble(CompositeLayer):
         Y_hat : theano.gof.Variable
             Predicted value(s).
         """
-        raise NotImplementedError('cost')
+        rval = self.layers[0].cost(Y, Y_hat)
+        return rval
 
 
-class EnsembleAverage(Ensemble):
+class GeometricMean(Ensemble):
     """
-    Ensemble layer that outputs the average of the output from the
+    Ensemble layer that outputs the geometric mean of the outputs from the
     composite layer.
 
     Parameters
@@ -106,43 +110,21 @@ class EnsembleAverage(Ensemble):
         Name of this layer.
     layers : tuple or list
         The component layers to run in parallel.
-    weights : list or None
-        Contribution of each model in the weighted average.
-    probabilities : bool
-        Assume that component layer outputs are class probabilities.
     inputs_to_layers : dict or None
         Mapping for inputs to component layers.
     """
     def fprop(self, state_below):
         """
-        Average outputs from composite layer.
+        Geometric mean of outputs from composite layer.
 
         Parameters
         ----------
         state_below : Space
             Batch of examples to propogate through each model.
         """
-        components = super(EnsembleAverage, self).fprop(state_below)
-        rval = T.mean(components, axis=0)
-        return rval
-
-    def cost(self, Y, Y_hat):
-        """
-        Average of component layer costs.
-
-        Parameters
-        ----------
-        Y : theano.gof.Variable
-            Target value(s).
-        Y_hat : theano.gof.Variable
-            Predicted value(s).
-        """
+        components = super(GeometricMean, self).fprop(state_below)
         if issubclass(self.output_type, Softmax):
-            log_prob = T.log(Y_hat)
-            log_prob_of = (Y * log_prob).sum(axis=1)
-            assert log_prob_of.ndim == 1
-            rval = log_prob_of.mean()
+            rval = geometric_mean_prediction(components)
         else:
-            components = tuple(layer.cost(Y, Y_hat) for layer in self.layers)
-            rval = T.mean(components, axis=0)
+            rval = T.exp(T.mean(T.log(components), axis=0))
         return rval
