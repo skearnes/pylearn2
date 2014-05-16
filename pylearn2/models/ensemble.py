@@ -48,9 +48,11 @@ class Ensemble(CompositeLayer):
         self.output_type = output_type
 
         # check that component layer output spaces match
+        self.output_space = None
         output_space = layers[0].get_output_space()
         for layer in layers[1:]:
             assert layer.get_output_space() == output_space
+        self.set_output_space()
 
     def set_input_space(self, space):
         """
@@ -65,10 +67,9 @@ class Ensemble(CompositeLayer):
             Input space.
         """
         super(Ensemble, self).set_input_space(space)
-        output_space = self.layers[0].get_output_space()
-        self.set_output_space(output_space)
+        self.set_output_space()
 
-    def set_output_space(self, space):
+    def set_output_space(self):
         """
         Set the output space of this layer. This method is provided for
         subclasses that might not populate the same output space as their
@@ -79,18 +80,7 @@ class Ensemble(CompositeLayer):
         space : Space
             Output space.
         """
-        self.output_space = space
-
-    def fprop(self, state_below):
-        """
-        Transform input.
-
-        Parameters
-        ----------
-        state_below : Space
-            Batch of examples to propogate through each model.
-        """
-        raise NotImplementedError('fprop')
+        self.output_space = self.layers[0].get_output_space()
 
     def cost(self, Y, Y_hat):
         """
