@@ -4,137 +4,83 @@ Tests for ensemble models.
 from pylearn2.config import yaml_parse
 
 
-def test_average():
-    """Test Average."""
-    trainer = yaml_parse.load(test_average_yaml)
+def test_train_ensemble_grid_search():
+    """Test TrainEnsembleGridSearch."""
+    trainer = yaml_parse.load(test_train_ensemble_grid_search_yaml)
     trainer.main_loop()
 
 
-def test_geometric_mean():
-    """Test GeometricMean."""
-    trainer = yaml_parse.load(test_geometric_mean_yaml)
-    trainer.main_loop()
+#def test_train_ensemble_grid_search_with_cv():
+#    """Test TrainEnsembleGridSearch with cross-validation."""
+#    trainer = yaml_parse.load(test_train_ensemble_grid_search_with_cv_yaml)
+#    trainer.main_loop()
 
-test_average_yaml = """
-!obj:pylearn2.train.Train {
+
+test_train_ensemble_grid_search_yaml = """
+!obj:pylearn2.ensemble.GridSearchEnsemble {
     dataset: &train
         !obj:pylearn2.testing.datasets.random_one_hot_dense_design_matrix {
             rng: !obj:numpy.random.RandomState { seed: 1 },
-            num_examples: 100,
+            num_examples: 10,
             dim: 10,
-            num_classes: 3,
+            num_classes: 2,
         },
-    model: !obj:pylearn2.models.mlp.MLP {
-        nvis: 10,
-        layers: [
-            !obj:pylearn2.ensemble.mlp.Average {
-                layer_name: ensemble,
-                layers: [
-                    !obj:pylearn2.models.mlp.MLP {
-                        nvis: 10,
-                        layers: [
-                            !obj:pylearn2.models.mlp.Sigmoid {
-                                layer_name: h0,
-                                dim: 20,
-                                irange: 0.05,
-                            },
-                            !obj:pylearn2.models.mlp.Softmax {
-                                layer_name: y,
-                                n_classes: 3,
-                                irange: 0.0,
-                            },
-                        ],
-                    },
-                    !obj:pylearn2.models.mlp.MLP {
-                        nvis: 10,
-                        layers: [
-                            !obj:pylearn2.models.mlp.Linear {
-                                layer_name: h0,
-                                dim: 20,
-                                irange: 0.05,
-                            },
-                            !obj:pylearn2.models.mlp.Softmax {
-                                layer_name: y,
-                                n_classes: 3,
-                                irange: 0.0,
-                            },
-                        ],
-                    },
-                ],
+    grid_search: !obj:pylearn2.grid_search.GridSearch {
+      template: "
+        !obj:pylearn2.train.Train {
+          dataset: &train
+          !obj:pylearn2.testing.datasets.random_one_hot_dense_design_matrix {
+            rng: !obj:numpy.random.RandomState { seed: 1 },
+            num_examples: 10,
+            dim: 10,
+            num_classes: 2,
+          },
+          model: !obj:pylearn2.models.mlp.MLP {
+            nvis: 10,
+            layers: [
+              !obj:pylearn2.models.mlp.Sigmoid {
+                dim: %(dim)s,
+                layer_name: h0,
+                irange: 0.05,
+              },
+              !obj:pylearn2.models.mlp.Softmax {
+                n_classes: 2,
+                layer_name: y,
+                irange: 0.0,
+              },
+            ],
+          },
+          algorithm: !obj:pylearn2.training_algorithms.bgd.BGD {
+            batch_size: 5,
+            line_search_mode: exhaustive,
+            conjugate: 1,
+            termination_criterion:
+              !obj:pylearn2.termination_criteria.EpochCounter {
+                max_epochs: 1,
+              },
+            monitoring_dataset: {
+              train: *train,
             },
-        ],
+          },
+        }",
+      param_grid: {
+        dim: [2, 4, 8]
+      },
+      monitor_channel: train_objective,
+      n_best: 2,
     },
+    ensemble: 'average',
     algorithm: !obj:pylearn2.training_algorithms.bgd.BGD {
-        batch_size: 10,
+        batch_size: 5,
         line_search_mode: exhaustive,
         conjugate: 1,
         termination_criterion:
             !obj:pylearn2.termination_criteria.EpochCounter {
                     max_epochs: 1,
         },
-        monitoring_dataset: *train,
-    },
-}
-"""
-
-test_geometric_mean_yaml = """
-!obj:pylearn2.train.Train {
-    dataset: &train
-        !obj:pylearn2.testing.datasets.random_one_hot_dense_design_matrix {
-            rng: !obj:numpy.random.RandomState { seed: 1 },
-            num_examples: 100,
-            dim: 10,
-            num_classes: 3,
+        monitoring_dataset: {
+          train: *train,
         },
-    model: !obj:pylearn2.models.mlp.MLP {
-        nvis: 10,
-        layers: [
-            !obj:pylearn2.ensemble.mlp.GeometricMean {
-                layer_name: ensemble,
-                layers: [
-                    !obj:pylearn2.models.mlp.MLP {
-                        nvis: 10,
-                        layers: [
-                            !obj:pylearn2.models.mlp.Sigmoid {
-                                layer_name: h0,
-                                dim: 20,
-                                irange: 0.05,
-                            },
-                            !obj:pylearn2.models.mlp.Softmax {
-                                layer_name: y,
-                                n_classes: 3,
-                                irange: 0.0,
-                            },
-                        ],
-                    },
-                    !obj:pylearn2.models.mlp.MLP {
-                        nvis: 10,
-                        layers: [
-                            !obj:pylearn2.models.mlp.Linear {
-                                layer_name: h0,
-                                dim: 20,
-                                irange: 0.05,
-                            },
-                            !obj:pylearn2.models.mlp.Softmax {
-                                layer_name: y,
-                                n_classes: 3,
-                                irange: 0.0,
-                            },
-                        ],
-                    },
-                ],
-            },
-        ],
-    },
-    algorithm: !obj:pylearn2.training_algorithms.bgd.BGD {
-        batch_size: 10,
-        line_search_mode: exhaustive,
-        conjugate: 1,
-        termination_criterion:
-            !obj:pylearn2.termination_criteria.EpochCounter {
-                    max_epochs: 1,
-        },
-        monitoring_dataset: *train,
     },
 }
 """

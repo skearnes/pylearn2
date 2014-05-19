@@ -1,5 +1,10 @@
 """
-Train ensemble models.
+Ensemble models.
+
+TODO:
+* More complicated layers: weighted average.
+* Combinations of models trained on different input. This can be handled
+with inputs_to_layers and ensemble_args.
 """
 
 __author__ = "Steven Kearnes"
@@ -9,12 +14,12 @@ __maintainer__ = "Steven Kearnes"
 
 import numpy as np
 
-from pylearn2.cross_validation import TrainCV
-from pylearn2.ensemble.mlp import get_ensemble_layer
+from pylearn2.ensemble.mlp import resolve_ensemble_layer
+from pylearn2.models.mlp import MLP
 from pylearn2.train import Train
 
 
-class TrainEnsembleGridSearch(object):
+class GridSearchEnsemble(object):
     """
     Train an ensemble model using models derived from grid search.
 
@@ -26,6 +31,13 @@ class TrainEnsembleGridSearch(object):
         Grid search object that trains models and sets a best_models
         attribute. The best_models attribute possibly contains results for
         each fold of cross-validation.
+    ensemble : str
+        Ensemble type. Passed to resolve_ensemble_layer.
+    ensemble_args : dict or None
+        Keyword arguments for ensemble layer.
+    model_args : dict or None
+        Keyword arguments for MLP. If None, nvis is extracted from one of
+        the component models.
     algorithm : TrainingAlgorithm
         Training algorithm.
     save_path : str or None
@@ -41,25 +53,29 @@ class TrainEnsembleGridSearch(object):
         Whether to write individual files for each cross-validation fold.
     cv_extensions : list or None
         TrainCVExtension objects for the parent TrainCV object.
-    ensemble : str or None
-        Ensemble type. If None, defaults to 'average'.
     """
-    def __init__(self, dataset, grid_search, algorithm=None, save_path=None,
-                 save_freq=0, extensions=None, allow_overwrite=True,
-                 ensemble=None):
+    def __init__(self, dataset, grid_search, ensemble, ensemble_args=None,
+                 model_args=None, algorithm=None, save_path=None, save_freq=0,
+                 extensions=None, allow_overwrite=True):
         self.dataset = dataset
         self.grid_search = grid_search
+        self.ensemble = ensemble
+        if ensemble_args is None:
+            ensemble_args = {}
+        self.ensemble_args = ensemble_args
+        if model_args is None:
+            model_args = {}
+        self.model_args = model_args
         self.algorithm = algorithm
         self.save_path = save_path
         self.save_freq = save_freq
         self.extensions = extensions
         self.allow_overwrite = allow_overwrite
-        self.ensemble = ensemble
 
         # placeholder
         self.ensemble_trainers = None
 
-    def main_loop(self, time_budget):
+    def main_loop(self, time_budget=None):
         """
         Run main_loop of each trainer.
 
@@ -78,143 +94,31 @@ class TrainEnsembleGridSearch(object):
         Construct ensemble model trainer, possibly one for each fold of
         cross-validation.
         """
+        if 'layer_name' not in self.ensemble_args:
+            self.ensemble_args['layer_name'] = 'ensemble'
+        if ('nvis' not in self.model_args or
+                'input_space' not in self.model_args):
+            self.model_args['input_space'] = np.atleast_2d(
+                self.grid_search.best_models)[0, 0].input_space
+        klass = resolve_ensemble_layer(self.ensemble)
         trainers = []
         if self.grid_search.cv:
             models = np.asarray(self.grid_search.best_models)
             if models.ndim == 1:
                 models = np.atleast_2d(models).T
             for this_models in models:
-                model = get_ensemble_mlp(this_models, self.ensemble)
+                layer = klass(layers=this_models, **self.ensemble_args)
+                model = MLP(layers=[layer], **self.model_args)
                 trainer = Train(self.dataset, model, self.algorithm,
                                 self.save_path, self.save_freq,
                                 self.extensions, self.allow_overwrite)
                 trainers.append(trainer)
         else:
-            model = get_ensemble_mlp(self.grid_search.best_models,
-                                     self.ensemble)
+            layer = klass(layers=self.grid_search.best_models,
+                          **self.ensemble_args)
+            model = MLP(layers=[layer], **self.model_args)
             trainer = Train(self.dataset, model, self.algorithm,
                             self.save_path, self.save_freq,
                             self.extensions, self.allow_overwrite)
             trainers = [trainer]
         self.ensemble_trainers = trainers
-
-class Ensemble(object):
-    """
-    Train an ensemble model.
-
-    Parameters
-    ----------
-    models : list
-        Models to combine.
-    ensemble : str or None
-        Ensemble type. If None, defaults to 'average'.
-    kwargs : dict
-        Keyword arguments for ensemble Train object.
-    """
-    def __init__(self, models, ensemble=None, **kwargs):
-        self.models = models
-        self.ensemble = ensemble
-        self.trainer_kwargs = kwargs
-
-        self.trainer = None
-        self.build_ensemble()
-
-    def main_loop(self, time_budget):
-        """
-        Run main_loop of each trainer.
-
-        Parameters
-        ----------
-        time_budget : int or None
-            Maximum time (in seconds) before interrupting training.
-        """
-        self.trainer.main_loop(time_budget)
-
-    def build_ensemble(self):
-        """Construct ensemble trainer."""
-
-
-
-class EnsembleGridSearch(Ensemble):
-    """
-    Train an ensemble model using models derived from grid search.
-
-    Parameters
-    ----------
-    grid_search : GridSearch
-        Grid search object that trains models and sets a best_models
-        attribute. The best_models attribute possibly contains results for
-        each fold of cross-validation.
-    ensemble : str or None
-        Ensemble type. If None, defaults to 'average'.
-    kwargs : dict
-        Keyword arguments for ensemble Train object.
-    """
-    def __init__(self, grid_search, ensemble=None, **kwargs):
-        self.grid_search = grid_search
-        self.ensemble = ensemble
-        self.trainer_kwargs = kwargs
-
-        self.models = None
-        self.trainer = None
-
-    def main_loop(self, time_budget=None):
-        """
-        Run main_loop of each trainer.
-
-        Parameters
-        ----------
-        time_budget : int or None
-            Maximum time (in seconds) before interrupting training.
-        """
-        self.grid_search.main_loop(time_budget)
-        self.build_ensemble()
-        self.ensemble_trainer.main_loop(time_budget)
-
-    def build_ensemble(self):
-        """Construct ensemble model trainer."""
-
-
-class TrainEnsemble2(object):
-    """
-    Train an ensemble model. Child models are trained first and selected
-    by performance on validation set. Then the ensemble model is trained
-    on the combined training and validation sets. Test set performance is
-    only calculated for the ensemble model.
-
-    The ensemble model is a Train object with the model defined by an MLP
-    containing an EnsembleLayer.
-
-    Parameters
-    ----------
-    ensemble : str or None
-        Ensemble type. If None, defaults to 'average'.
-    n_best : int or None
-        Number of models to include in the ensemble. If None, all models
-        are included.
-    kwargs : dict
-        Keyword arguments for ensemble Train object.
-    """
-    def __init__(self, trainers, ensemble=None, n_best=None, **kwargs):
-        self.trainers = trainers
-        self.n_best = n_best
-        self.ensemble_kwargs = kwargs
-        self.ensemble = ensemble
-        self.ensemble_trainer = None
-
-    def main_loop(self, time_budget=None):
-        """
-        Run main_loop of each trainer.
-
-        Parameters
-        ----------
-        time_budget : int or None
-            Maximum time (in seconds) before interrupting training.
-        """
-        # train children
-        for trainer in self.trainers:
-            trainer.main_loop(time_budget)
-
-        # construct and train ensemble model
-        self.build_ensemble()
-        self.ensemble_trainer.main_loop(time_budget)

@@ -8,6 +8,10 @@ wrap CompositeLayer. While CompositeLayers can be used in MLPs without any
 wrapper (by flattening their output), these classes explicitly acknowledge
 and take advantage of the relationships between the predictions of the
 parallel layers.
+
+An ensemble layer can be represented by a composite layer that feeds into a
+transformation layer (which is also a composite layer). The output of the
+transformation layer is the same as the output of a single component layer.
 """
 
 __author__ = "Steven Kearnes"
@@ -18,37 +22,24 @@ __maintainer__ = "Steven Kearnes"
 from theano import tensor as T
 
 from pylearn2.models.mlp import (CompositeLayer, geometric_mean_prediction,
-                                 MLP, Softmax)
+                                 MLP, PretrainedLayer, Softmax)
 
 
-def resolve_ensemble_type(ensemble):
-    if ensemble is None:
+def resolve_ensemble_layer(ensemble):
+    """
+    Resolve EnsembleLayer class from a string.
+
+    Parameters
+    ----------
+    ensemble : str
+        EnsembleLayer class identifier.
+    """
+    if ensemble == 'average':
+        return Average
+    elif ensemble == 'geometric_mean':
         return GeometricMean
     else:
         raise NotImplementedError("Ensemble type '{}'.".format(ensemble))
-
-
-def get_ensemble_layer(layer_name, layers, inputs_to_layers=None,
-                       ensemble=None):
-    """
-    Construct an MLP with an ensemble layer.
-
-    Parameters
-    ----------
-    Parameters
-    ----------
-    layer_name : str
-        Name of this layer.
-    layers : tuple or list
-        The component layers to run in parallel.
-    inputs_to_layers : dict or None
-        Mapping for inputs to component layers.
-    ensemble : str or None
-        Ensemble type. If None, defaults to 'average'.
-    """
-    klass = resolve_ensemble_type(ensemble)
-    layer = klass(layer_name, layers, inputs_to_layers)
-    return layer
 
 
 class EnsembleLayer(CompositeLayer):
@@ -66,10 +57,14 @@ class EnsembleLayer(CompositeLayer):
         The component layers to run in parallel.
     inputs_to_layers : dict or None
         Mapping for inputs to component layers.
+    freeze_params : bool
+        Whether to freeze the parameters of the component layers.
     """
-    def __init__(self, layer_name, layers, inputs_to_layers=None):
+    def __init__(self, layer_name, layers, inputs_to_layers=None,
+                 freeze_params=False):
         super(EnsembleLayer, self).__init__(layer_name, layers,
                                             inputs_to_layers)
+        self.freeze_params = freeze_params
 
         # check that component layer output classes match
         if isinstance(layers[0], MLP):
@@ -79,13 +74,6 @@ class EnsembleLayer(CompositeLayer):
         else:
             raise NotImplementedError('Ensemble layers must be MLPs.')
         self.output_type = output_type
-
-        # check that component layer output spaces match
-        self.output_space = None
-        output_space = layers[0].get_output_space()
-        for layer in layers[1:]:
-            assert layer.get_output_space() == output_space
-        self.set_output_space()
 
     def set_input_space(self, space):
         """
@@ -132,6 +120,13 @@ class EnsembleLayer(CompositeLayer):
         rval = self.layers[0].cost(Y, Y_hat)
         return rval
 
+    def get_params(self):
+        """Get model parameters."""
+        if self.freeze_params:
+            return []
+        else:
+            return super(EnsembleLayer, self).get_params()
+
 
 class Average(EnsembleLayer):
     """
@@ -145,6 +140,8 @@ class Average(EnsembleLayer):
         The component layers to run in parallel.
     inputs_to_layers : dict or None
         Mapping for inputs to component layers.
+    freeze_params : bool
+        Whether to freeze the parameters of the component layers.
     """
     def fprop(self, state_below):
         """
@@ -174,6 +171,8 @@ class GeometricMean(EnsembleLayer):
         The component layers to run in parallel.
     inputs_to_layers : dict or None
         Mapping for inputs to component layers.
+    freeze_params : bool
+        Whether to freeze the parameters of the component layers.
     """
     def fprop(self, state_below):
         """
