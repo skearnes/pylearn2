@@ -7,20 +7,24 @@ __copyright__ = "Copyright 2014, Stanford University"
 __license__ = "3-clause BSD"
 __maintainer__ = "Steven Kearnes"
 
+import numpy as np
+
 from pylearn2.cross_validation import TrainCV
 from pylearn2.train import Train
 
 
-class TrainEnsemble(object):
+class TrainEnsembleGridSearch(object):
     """
-    Train an ensemble model.
+    Train an ensemble model using models derived from grid search.
 
     Parameters
     ----------
     dataset : Dataset
         Training dataset.
-    model : Model
-        Training model.
+    grid_search : GridSearch
+        Grid search object that trains models and sets a best_models
+        attribute. The best_models attribute possibly contains results for
+        each fold of cross-validation.
     algorithm : TrainingAlgorithm
         Training algorithm.
     save_path : str or None
@@ -37,9 +41,40 @@ class TrainEnsemble(object):
     cv_extensions : list or None
         TrainCVExtension objects for the parent TrainCV object.
     """
-    def __init__(self, dataset, models, algorithm=None, save_path=None,
+    def __init__(self, dataset, grid_search, algorithm=None, save_path=None,
                  save_freq=0, extensions=None, allow_overwrite=True):
+        self.dataset = dataset
+        self.grid_search = grid_search
+        self.algorithm = algorithm
+        self.save_path = save_path
+        self.save_freq = save_freq
+        self.extensions = extensions
+        self.allow_overwrite = allow_overwrite
 
+        self.ensemble_trainers = None
+
+    def main_loop(self, time_budget):
+        """
+        Run main_loop of each trainer.
+
+        Parameters
+        ----------
+        time_budget : int or None
+            Maximum time (in seconds) before interrupting training.
+        """
+        self.grid_search.main_loop(time_budget)
+        self.build_ensemble()
+        for trainer in self.ensemble_trainers:
+            trainer.main_loop(time_budget)
+
+    def build_ensemble(self):
+        trainers = []
+        for models in np.atleast_2d(self.grid_search.best_models):
+            trainer = Train(self.dataset, models, self.algorithm,
+                            self.save_path, self.save_freq, self.extensions,
+                            self.allow_overwrite)
+            trainers.append(trainer)
+        self.ensemble_trainers = trainers
 
 class Ensemble(object):
     """
