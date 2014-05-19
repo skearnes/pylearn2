@@ -11,6 +11,39 @@ from pylearn2.cross_validation import TrainCV
 from pylearn2.train import Train
 
 
+class EnsembleGridSearch(object):
+    """
+    Train an ensemble model using models derived from grid search.
+
+    Parameters
+    ----------
+    grid_search : GridSearch
+        Grid search object that trains models and sets a best_models
+        attribute.
+    ensemble : str or None
+        Ensemble type. If None, defaults to 'average'.
+    kwargs : dict
+        Keyword arguments for ensemble Train object.
+    """
+    def __init__(self, grid_search, ensemble=None, **kwargs):
+        self.grid_search = grid_search
+        self.ensemble = ensemble
+        self.ensemble_kwargs = kwargs
+
+    def main_loop(self, time_budget=None):
+        """
+        Run main_loop of each trainer.
+
+        Parameters
+        ----------
+        time_budget : int or None
+            Maximum time (in seconds) before interrupting training.
+        """
+        self.grid_search.main_loop(time_budget)
+        self.build_ensemble()
+        self.ensemble_trainer.main_loop(time_budget)
+
+
 class TrainEnsemble(object):
     """
     Train an ensemble model. Child models are trained first and selected
