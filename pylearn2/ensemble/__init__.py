@@ -10,6 +10,7 @@ __maintainer__ = "Steven Kearnes"
 import numpy as np
 
 from pylearn2.cross_validation import TrainCV
+from pylearn2.ensemble.mlp import get_ensemble_layer
 from pylearn2.train import Train
 
 
@@ -40,9 +41,12 @@ class TrainEnsembleGridSearch(object):
         Whether to write individual files for each cross-validation fold.
     cv_extensions : list or None
         TrainCVExtension objects for the parent TrainCV object.
+    ensemble : str or None
+        Ensemble type. If None, defaults to 'average'.
     """
     def __init__(self, dataset, grid_search, algorithm=None, save_path=None,
-                 save_freq=0, extensions=None, allow_overwrite=True):
+                 save_freq=0, extensions=None, allow_overwrite=True,
+                 ensemble=None):
         self.dataset = dataset
         self.grid_search = grid_search
         self.algorithm = algorithm
@@ -50,7 +54,9 @@ class TrainEnsembleGridSearch(object):
         self.save_freq = save_freq
         self.extensions = extensions
         self.allow_overwrite = allow_overwrite
+        self.ensemble = ensemble
 
+        # placeholder
         self.ensemble_trainers = None
 
     def main_loop(self, time_budget):
@@ -68,12 +74,28 @@ class TrainEnsembleGridSearch(object):
             trainer.main_loop(time_budget)
 
     def build_ensemble(self):
+        """
+        Construct ensemble model trainer, possibly one for each fold of
+        cross-validation.
+        """
         trainers = []
-        for models in np.atleast_2d(self.grid_search.best_models):
-            trainer = Train(self.dataset, models, self.algorithm,
-                            self.save_path, self.save_freq, self.extensions,
-                            self.allow_overwrite)
-            trainers.append(trainer)
+        if self.grid_search.cv:
+            models = np.asarray(self.grid_search.best_models)
+            if models.ndim == 1:
+                models = np.atleast_2d(models).T
+            for this_models in models:
+                model = get_ensemble_mlp(this_models, self.ensemble)
+                trainer = Train(self.dataset, model, self.algorithm,
+                                self.save_path, self.save_freq,
+                                self.extensions, self.allow_overwrite)
+                trainers.append(trainer)
+        else:
+            model = get_ensemble_mlp(self.grid_search.best_models,
+                                     self.ensemble)
+            trainer = Train(self.dataset, model, self.algorithm,
+                            self.save_path, self.save_freq,
+                            self.extensions, self.allow_overwrite)
+            trainers = [trainer]
         self.ensemble_trainers = trainers
 
 class Ensemble(object):

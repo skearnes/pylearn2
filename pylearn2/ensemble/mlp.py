@@ -21,6 +21,36 @@ from pylearn2.models.mlp import (CompositeLayer, geometric_mean_prediction,
                                  MLP, Softmax)
 
 
+def resolve_ensemble_type(ensemble):
+    if ensemble is None:
+        return GeometricMean
+    else:
+        raise NotImplementedError("Ensemble type '{}'.".format(ensemble))
+
+
+def get_ensemble_layer(layer_name, layers, inputs_to_layers=None,
+                       ensemble=None):
+    """
+    Construct an MLP with an ensemble layer.
+
+    Parameters
+    ----------
+    Parameters
+    ----------
+    layer_name : str
+        Name of this layer.
+    layers : tuple or list
+        The component layers to run in parallel.
+    inputs_to_layers : dict or None
+        Mapping for inputs to component layers.
+    ensemble : str or None
+        Ensemble type. If None, defaults to 'average'.
+    """
+    klass = resolve_ensemble_type(ensemble)
+    layer = klass(layer_name, layers, inputs_to_layers)
+    return layer
+
+
 class EnsembleLayer(CompositeLayer):
     """
     Subclass of CompositeLayer that does special handling of output,
@@ -103,10 +133,38 @@ class EnsembleLayer(CompositeLayer):
         return rval
 
 
+class Average(EnsembleLayer):
+    """
+    Ensemble average.
+
+    Parameters
+    ----------
+    layer_name : str
+        Name of this layer.
+    layers : tuple or list
+        The component layers to run in parallel.
+    inputs_to_layers : dict or None
+        Mapping for inputs to component layers.
+    """
+    def fprop(self, state_below):
+        """
+        Average of outputs from composite layer.
+
+        Parameters
+        ----------
+        state_below : Space
+            Batch of examples to propogate through each model.
+        """
+        components = super(Average, self).fprop(state_below)
+        rval = T.mean(components, axis=0)
+        if issubclass(self.output_type, Softmax):
+            rval = T.nnet.softmax(T.log(rval))
+        return rval
+
+
 class GeometricMean(EnsembleLayer):
     """
-    Ensemble layer that outputs the geometric mean of the outputs from the
-    composite layer.
+    Ensemble geometric mean.
 
     Parameters
     ----------
