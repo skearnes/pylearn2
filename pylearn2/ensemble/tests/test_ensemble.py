@@ -86,19 +86,22 @@ test_train_ensemble_grid_search_yaml = """
 
 test_train_ensemble_grid_search_with_cv_yaml = """
 !obj:pylearn2.ensemble.GridSearchEnsemble {
-    dataset: &train
+    dataset_iterator:
+      !obj:pylearn2.cross_validation.dataset_iterators.DatasetKFold {
+        dataset:
         !obj:pylearn2.testing.datasets.random_one_hot_dense_design_matrix {
-            rng: !obj:numpy.random.RandomState { seed: 1 },
-            num_examples: 10,
-            dim: 10,
-            num_classes: 2,
+              rng: !obj:numpy.random.RandomState { seed: 1 },
+              num_examples: 10,
+              dim: 10,
+              num_classes: 2,
+            },
         },
     grid_search: !obj:pylearn2.grid_search.GridSearch {
       template: "
         !obj:pylearn2.cross_validation.TrainCV {
           dataset_iterator:
             !obj:pylearn2.cross_validation.dataset_iterators.DatasetKFold {
-              dataset: &train
+              dataset:
             !obj:pylearn2.testing.datasets.random_one_hot_dense_design_matrix {
                   rng: !obj:numpy.random.RandomState { seed: 1 },
                   num_examples: 10,
@@ -129,9 +132,6 @@ test_train_ensemble_grid_search_with_cv_yaml = """
               !obj:pylearn2.termination_criteria.EpochCounter {
                 max_epochs: 1,
               },
-            monitoring_dataset: {
-              train: *train,
-            },
           },
         }",
       param_grid: {
@@ -148,9 +148,6 @@ test_train_ensemble_grid_search_with_cv_yaml = """
         termination_criterion:
             !obj:pylearn2.termination_criteria.EpochCounter {
                     max_epochs: 1,
-        },
-        monitoring_dataset: {
-          train: *train,
         },
     },
 }

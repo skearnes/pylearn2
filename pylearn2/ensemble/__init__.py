@@ -17,6 +17,7 @@ import numpy as np
 from pylearn2.ensemble.mlp import resolve_ensemble_layer
 from pylearn2.models.mlp import MLP
 from pylearn2.train import Train
+from pylearn2.utils import safe_zip
 
 
 class GridSearchEnsemble(object):
@@ -25,14 +26,16 @@ class GridSearchEnsemble(object):
 
     Parameters
     ----------
-    dataset : Dataset
-        Training dataset.
     grid_search : GridSearch
         Grid search object that trains models and sets a best_models
         attribute. The best_models attribute possibly contains results for
         each fold of cross-validation.
     ensemble : str
         Ensemble type. Passed to resolve_ensemble_layer.
+    dataset : Dataset or None
+        Training dataset.
+    dataset_iterator : iterable or None
+        Cross validation dataset iterator.
     ensemble_args : dict or None
         Keyword arguments for ensemble layer.
     model_args : dict or None
@@ -54,10 +57,15 @@ class GridSearchEnsemble(object):
     cv_extensions : list or None
         TrainCVExtension objects for the parent TrainCV object.
     """
-    def __init__(self, dataset, grid_search, ensemble, ensemble_args=None,
-                 model_args=None, algorithm=None, save_path=None, save_freq=0,
-                 extensions=None, allow_overwrite=True):
+    def __init__(self, grid_search, ensemble, dataset=None,
+                 dataset_iterator=None, ensemble_args=None, model_args=None,
+                 algorithm=None, save_path=None, save_freq=0, extensions=None,
+                 allow_overwrite=True):
+        assert dataset is not None or dataset_iterator is not None, (
+            "One of dataset or dataset_iterator must be provided.")
+        assert dataset is None or dataset_iterator is None
         self.dataset = dataset
+        self.dataset_iterator = dataset_iterator
         self.grid_search = grid_search
         self.ensemble = ensemble
         if ensemble_args is None:
@@ -102,16 +110,19 @@ class GridSearchEnsemble(object):
                 self.grid_search.best_models)[0, 0].input_space
         klass = resolve_ensemble_layer(self.ensemble)
         trainers = []
-        if self.grid_search.cv:
+        if self.dataset_iterator is not None:
+            assert self.grid_search.cv
             models = np.asarray(self.grid_search.best_models)
             if models.ndim == 1:
                 models = np.atleast_2d(models).T
-            for this_models in models:
+            for dataset, this_models in safe_zip(list(self.dataset_iterator),
+                                                 models):
                 layer = klass(layers=this_models, **self.ensemble_args)
                 model = MLP(layers=[layer], **self.model_args)
-                trainer = Train(self.dataset, model, self.algorithm,
+                trainer = Train(dataset['train'], model, self.algorithm,
                                 self.save_path, self.save_freq,
                                 self.extensions, self.allow_overwrite)
+                trainer.algorithm._set_monitoring_dataset(dataset)
                 trainers.append(trainer)
         else:
             layer = klass(layers=self.grid_search.best_models,
@@ -120,5 +131,6 @@ class GridSearchEnsemble(object):
             trainer = Train(self.dataset, model, self.algorithm,
                             self.save_path, self.save_freq,
                             self.extensions, self.allow_overwrite)
+            trainer.algorithm._set_monitoring_dataset(self.dataset)
             trainers = [trainer]
         self.ensemble_trainers = trainers
