@@ -8,10 +8,6 @@ wrap CompositeLayer. While CompositeLayers can be used in MLPs without any
 wrapper (by flattening their output), these classes explicitly acknowledge
 and take advantage of the relationships between the predictions of the
 parallel layers.
-
-An ensemble layer can be represented by a composite layer that feeds into a
-transformation layer (which is also a composite layer). The output of the
-transformation layer is the same as the output of a single component layer.
 """
 
 __author__ = "Steven Kearnes"
