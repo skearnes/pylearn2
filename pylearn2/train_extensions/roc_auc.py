@@ -1,7 +1,13 @@
 """
-TrainExtension subclass for calculating ROC AUC values as monitor
-channels.
+TrainExtension subclass for calculating ROC AUC scores on monitoring
+dataset(s), reported via monitor channels.
 """
+
+__author__ = "Steven Kearnes"
+__copyright__ = "Copyright 2014, Stanford University"
+__license__ = "3-clause BSD"
+__maintainer__ = "Steven Kearnes"
+
 import numpy as np
 import warnings
 try:
@@ -17,9 +23,16 @@ from pylearn2.train_extensions import TrainExtension
 
 
 class RocAucScoreOp(gof.Op):
-    """Theano Op wrapping sklearn.metrics.roc_auc_score."""
+    """
+    Theano Op wrapping sklearn.metrics.roc_auc_score.
+
+    Parameters
+    ----------
+    use_c_code : WRITEME
+    """
     def make_node(self, y_true, y_score):
-        """Calculate ROC AUC score.
+        """
+        Calculate ROC AUC score.
 
         Parameters
         ----------
@@ -34,7 +47,8 @@ class RocAucScoreOp(gof.Op):
         return gof.Apply(self, [y_true, y_score], output)
 
     def perform(self, node, inputs, output_storage):
-        """Calculate ROC AUC score.
+        """
+        Calculate ROC AUC score.
 
         Parameters
         ----------
@@ -54,7 +68,8 @@ class RocAucScoreOp(gof.Op):
 
 
 def roc_auc_score(y_true, y_score):
-    """Calculate ROC AUC score.
+    """
+    Calculate ROC AUC score.
 
     Parameters
     ----------
@@ -67,16 +82,12 @@ def roc_auc_score(y_true, y_score):
 
 
 class RocAucChannel(TrainExtension):
-    """Adds a ROC AUC channel to the monitor for each monitoring dataset.
+    """
+    Adds a ROC AUC channel to the monitor for each monitoring dataset.
 
-    Notes
-    -----
     This monitor will return nan unless both classes are represented in
     y_true. For this reason, it is recommended to set monitoring_batches
     to 1, especially when using unbalanced datasets.
-
-    Currently, monitoring_batches is overridden by batch_size, so it is
-    also recommended to set batches_per_iter to 1 and not use batch_size.
     """
     def setup(self, model, dataset, algorithm):
         """
