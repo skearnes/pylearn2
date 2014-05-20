@@ -8,11 +8,19 @@ from pylearn2.testing.skip import skip_if_no_sklearn
 
 
 class TestRocAucChannel(unittest.TestCase):
-    """Train a simple model and calculate ROC AUC for monitoring datasets."""
+    """
+    Train a simple model and calculate ROC AUC for monitoring datasets.
+
+    Parameters
+    ----------
+    WRITEME
+    """
     def setUp(self):
+        """Set up test."""
         skip_if_no_sklearn()
 
     def test_roc_auc(self):
+        """Test RocAucChannel."""
         trainer = yaml_parse.load(test_yaml)
         trainer.main_loop()
 

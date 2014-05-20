@@ -17,7 +17,13 @@ from pylearn2.train_extensions import TrainExtension
 
 
 class RocAucScoreOp(gof.Op):
-    """Theano Op wrapping sklearn.metrics.roc_auc_score."""
+    """
+    Theano Op wrapping sklearn.metrics.roc_auc_score.
+
+    Parameters
+    ----------
+    WRITEME
+    """
     def make_node(self, y_true, y_score):
         """Calculate ROC AUC score.
 
