@@ -14,6 +14,7 @@ __maintainer__ = "Steven Kearnes"
 
 import numpy as np
 
+from pylearn2.cross_validation import TrainCV
 from pylearn2.ensemble.mlp import resolve_ensemble_layer
 from pylearn2.models.mlp import MLP
 from pylearn2.train import Train
@@ -44,16 +45,13 @@ class GridSearchEnsemble(object):
     algorithm : TrainingAlgorithm
         Training algorithm.
     save_path : str or None
-        Output filename for trained models. Also used (with modification)
-        for individual models if save_folds is True.
+        Output filename for trained model(s).
     save_freq : int
-        Save frequency, in epochs. Only used if save_folds is True.
+        Save frequency, in epochs.
     extensions : list or None
         TrainExtension objects for individual Train objects.
     allow_overwrite : bool
         Whether to overwrite pre-existing output file matching save_path.
-    save_folds: bool
-        Whether to write individual files for each cross-validation fold.
     cv_extensions : list or None
         TrainCVExtension objects for the parent TrainCV object.
     """
@@ -81,7 +79,7 @@ class GridSearchEnsemble(object):
         self.allow_overwrite = allow_overwrite
 
         # placeholder
-        self.ensemble_trainers = None
+        self.ensemble_trainer = None
 
     def main_loop(self, time_budget=None):
         """
@@ -94,8 +92,7 @@ class GridSearchEnsemble(object):
         """
         self.grid_search.main_loop(time_budget)
         self.build_ensemble()
-        for trainer in self.ensemble_trainers:
-            trainer.main_loop(time_budget)
+        self.ensemble_trainer.main_loop(time_budget)
 
     def build_ensemble(self):
         """
