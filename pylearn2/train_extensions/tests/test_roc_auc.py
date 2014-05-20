@@ -1,3 +1,6 @@
+"""
+Tests for ROC AUC.
+"""
 import unittest
 
 from pylearn2.config import yaml_parse
