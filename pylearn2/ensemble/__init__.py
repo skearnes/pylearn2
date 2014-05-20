@@ -18,7 +18,6 @@ from pylearn2.cross_validation import TrainCV
 from pylearn2.ensemble.mlp import resolve_ensemble_layer
 from pylearn2.models.mlp import MLP
 from pylearn2.train import Train
-from pylearn2.utils import safe_zip
 
 
 class GridSearchEnsemble(object):
@@ -52,13 +51,17 @@ class GridSearchEnsemble(object):
         TrainExtension objects for individual Train objects.
     allow_overwrite : bool
         Whether to overwrite pre-existing output file matching save_path.
+    save_folds: bool
+        Whether to write individual files for each cross-validation fold.
+        Only used if dataset_iterator is used.
     cv_extensions : list or None
-        TrainCVExtension objects for the parent TrainCV object.
+        TrainCVExtension objects for the parent TrainCV object. Only used
+        if dataset_iterator is used.
     """
     def __init__(self, grid_search, ensemble, dataset=None,
                  dataset_iterator=None, ensemble_args=None, model_args=None,
                  algorithm=None, save_path=None, save_freq=0, extensions=None,
-                 allow_overwrite=True):
+                 allow_overwrite=True, save_folds=False, cv_extensions=None):
         assert dataset is not None or dataset_iterator is not None, (
             "One of dataset or dataset_iterator must be provided.")
         assert dataset is None or dataset_iterator is None
@@ -77,6 +80,8 @@ class GridSearchEnsemble(object):
         self.save_freq = save_freq
         self.extensions = extensions
         self.allow_overwrite = allow_overwrite
+        self.save_folds = save_folds
+        self.cv_extensions = cv_extensions
 
         # placeholder
         self.ensemble_trainer = None
@@ -106,21 +111,20 @@ class GridSearchEnsemble(object):
             self.model_args['input_space'] = np.atleast_2d(
                 self.grid_search.best_models)[0, 0].input_space
         klass = resolve_ensemble_layer(self.ensemble)
-        trainers = []
         if self.dataset_iterator is not None:
             assert self.grid_search.cv
             models = np.asarray(self.grid_search.best_models)
             if models.ndim == 1:
                 models = np.atleast_2d(models).T
-            for dataset, this_models in safe_zip(list(self.dataset_iterator),
-                                                 models):
+            model_iterator = []
+            for this_models in models:
                 layer = klass(layers=this_models, **self.ensemble_args)
                 model = MLP(layers=[layer], **self.model_args)
-                trainer = Train(dataset['train'], model, self.algorithm,
-                                self.save_path, self.save_freq,
-                                self.extensions, self.allow_overwrite)
-                trainer.algorithm._set_monitoring_dataset(dataset)
-                trainers.append(trainer)
+                model_iterator.append(model)
+            trainer = TrainCV(self.dataset_iterator, None, model_iterator,
+                              self.algorithm, self.save_path, self.save_freq,
+                              self.extensions, self.allow_overwrite,
+                              self.save_folds, self.cv_extensions)
         else:
             layer = klass(layers=self.grid_search.best_models,
                           **self.ensemble_args)
@@ -128,6 +132,4 @@ class GridSearchEnsemble(object):
             trainer = Train(self.dataset, model, self.algorithm,
                             self.save_path, self.save_freq,
                             self.extensions, self.allow_overwrite)
-            trainer.algorithm._set_monitoring_dataset(self.dataset)
-            trainers = [trainer]
-        self.ensemble_trainers = trainers
+        self.ensemble_trainer = trainer
