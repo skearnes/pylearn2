@@ -20,7 +20,7 @@ test_average_yaml = """
     dataset: &train
         !obj:pylearn2.testing.datasets.random_one_hot_dense_design_matrix {
             rng: !obj:numpy.random.RandomState { seed: 1 },
-            num_examples: 100,
+            num_examples: 10,
             dim: 10,
             num_classes: 3,
         },
@@ -65,7 +65,7 @@ test_average_yaml = """
         ],
     },
     algorithm: !obj:pylearn2.training_algorithms.bgd.BGD {
-        batch_size: 10,
+        batch_size: 5,
         line_search_mode: exhaustive,
         conjugate: 1,
         termination_criterion:
@@ -82,7 +82,7 @@ test_geometric_mean_yaml = """
     dataset: &train
         !obj:pylearn2.testing.datasets.random_one_hot_dense_design_matrix {
             rng: !obj:numpy.random.RandomState { seed: 1 },
-            num_examples: 100,
+            num_examples: 10,
             dim: 10,
             num_classes: 3,
         },
@@ -127,7 +127,7 @@ test_geometric_mean_yaml = """
         ],
     },
     algorithm: !obj:pylearn2.training_algorithms.bgd.BGD {
-        batch_size: 10,
+        batch_size: 5,
         line_search_mode: exhaustive,
         conjugate: 1,
         termination_criterion:
