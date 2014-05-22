@@ -26,6 +26,7 @@ from pylearn2.costs.cost import Cost, DefaultDataSpecsMixin
 from pylearn2.models import Model
 from pylearn2.monitor import Monitor
 from pylearn2.space import CompositeSpace, VectorSpace
+from pylearn2.training_algorithms.default import DefaultTrainingAlgorithm
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def extract_data(dataset):
 
 
 class SKLearnModel(Model):
-    def __init__(self, model, input_dim, output_dim, monitoring_dataset=None):
+    def __init__(self, model, input_dim, output_dim):
         super(SKLearnModel, self).__init__()
         self.model = model
         self.model._is_trained = False
@@ -56,7 +57,10 @@ class SKLearnModel(Model):
 
         # set up monitor
         self.monitor = Monitor(self)
-        self.monitor.setup(monitoring_dataset, SKLearnCost(model), None, 1)
+
+    def get_default_cost(self):
+        cost = SKLearnCost(self.model)
+        return cost
 
     def get_params(self):
         return []
@@ -78,6 +82,23 @@ class SKLearnModel(Model):
 
     def continue_learning(self):
         return False
+
+
+class SKLearnTrainingAlgorithm(DefaultTrainingAlgorithm):
+    def __init__(self, monitoring_dataset=None):
+        super(SKLearnTrainingAlgorithm, self).__init__(
+            batch_size=None, batches_per_iter=1, monitoring_batch_size=None,
+            monitoring_batches=1, monitoring_dataset=monitoring_dataset,
+            termination_criterion=None, set_batch_size=False)
+        self.learn_more = False  # only one epoch
+
+    def _synchronize_batch_size(self, model):
+        pass
+
+    def train(self, dataset):
+        assert self.bSetup
+        rval = self.model.train_all(dataset)
+        return rval
 
 
 class SKLearnCost(DefaultDataSpecsMixin, Cost):
