@@ -49,7 +49,13 @@ test_sklearn_model_yaml = """
     },
     input_dim: 5,
     output_dim: 2,
-    monitoring_dataset: *train,
-  }
+  },
+  algorithm:
+    !obj:pylearn2.sklearn.SKLearnTrainingAlgorithm {
+      monitoring_dataset: *train,
+    },
+  extensions: [
+    !obj:pylearn2.train_extensions.roc_auc.RocAucChannel {},
+  ],
 }
 """
