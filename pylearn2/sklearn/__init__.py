@@ -17,11 +17,84 @@ import numpy as np
 import os
 import time
 
+import theano
+from theano import gof, config
+from theano import tensor as T
+
 from pylearn2 import cross_validation, train
+from pylearn2.costs.cost import Cost, DefaultDataSpecsMixin
+from pylearn2.models import Model
+from pylearn2.monitor import Monitor
+from pylearn2.space import VectorSpace
 
 log = logging.getLogger(__name__)
 
 
+def extract_data(dataset):
+    """
+    Extract data from a pylearn2 dataset.
+
+    Parameters
+    ----------
+    dataset : Dataset
+    """
+    iterator = dataset.iterator(mode='sequential', num_batches=1,
+                                data_specs=dataset.data_specs)
+    data = tuple(iterator.next())
+    if len(data) == 2 and data[1].ndim == 2:
+        data = (data[0], np.argmax(data[1], axis=1))
+    return data
+
+
+class SKLearnModel(Model):
+    def __init__(self, model, input_dim, output_dim, monitoring_dataset=None):
+        super(SKLearnModel, self).__init__()
+        self.model = model
+        self.input_space = VectorSpace(input_dim)
+        self.output_space = VectorSpace(output_dim)
+
+        # set up monitor
+        self.monitor = Monitor(self)
+        self.monitor.setup(monitoring_dataset, SKLearnCost(), None,
+                           1)
+
+    def get_params(self):
+        return []
+
+    def train_all(self, dataset):
+        data = extract_data(dataset)
+        self.model.fit(*data)
+
+    def continue_learning(self):
+        return False
+
+
+class SKLearnCost(DefaultDataSpecsMixin, Cost):
+    supervised = True
+
+    def expr(self, model, data, **kwargs):
+        X, y = data
+        y = T.argmax(y, axis=1)
+        score = SKLearnScoreOp()(model.model, X, y)
+        return score
+
+
+class SKLearnScoreOp(gof.Op):
+    def make_node(self, model, X, y):
+        model = T.as_tensor_variable(model)
+        X = T.as_tensor_variable(X)
+        y = T.as_tensor_variable(y)
+        output = [T.TensorType(config.floatX, []).make_variable(name='score')]
+        return gof.Apply(self, [model, X, y], output)
+
+    def perform(self, node, inputs, output_storage):
+        model, X, y = inputs
+        score = model.score(X, y)
+        output_storage[0][0] = theano._asarray(score, dtype=config.floatX)
+
+
+
+'''
 class Train(train.Train):
     """
     Pylearn2-like interface for sklearn models.
@@ -298,3 +371,4 @@ class MonitorChannel(object):
         """
         self.val_record[0] = value
         log.info('\t{}: {}'.format(self.name, value))
+'''
