@@ -175,8 +175,6 @@ class SKLearnPredictOp(gof.Op):
         output_storage[0][0] = theano._asarray(p, dtype=config.floatX)
 
 
-
-'''
 class Train(train.Train):
     """
     Pylearn2-like interface for sklearn models.
@@ -453,4 +451,3 @@ class MonitorChannel(object):
         """
         self.val_record[0] = value
         log.info('\t{}: {}'.format(self.name, value))
-'''
