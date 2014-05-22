@@ -86,7 +86,7 @@ class GridSearchEnsemble(object):
         # placeholder
         self.ensemble_trainer = None
 
-    def main_loop(self, time_budget=None):
+    def main_loop(self, time_budget=None, parallel=False, client_kwargs=None):
         """
         Run main_loop of each trainer.
 
@@ -94,10 +94,19 @@ class GridSearchEnsemble(object):
         ----------
         time_budget : int or None
             Maximum time (in seconds) before interrupting training.
+        parallel : bool
+            Whether to train subtrainers in parallel using
+            IPython.parallel.
+        client_kwargs : dict or None
+            Keyword arguments for IPython.parallel.Client.
         """
-        self.grid_search.main_loop(time_budget)
+        self.grid_search.main_loop(time_budget, parallel, client_kwargs)
         self.build_ensemble()
-        self.ensemble_trainer.main_loop(time_budget)
+        if isinstance(self.ensemble_trainer, TrainCV):
+            self.ensemble_trainer.main_loop(time_budget, parallel,
+                                            client_kwargs)
+        else:
+            self.ensemble_trainer.main_loop(time_budget)
 
     def build_ensemble(self):
         """
