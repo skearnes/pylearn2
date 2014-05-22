@@ -25,7 +25,7 @@ from pylearn2 import cross_validation, train
 from pylearn2.costs.cost import Cost, DefaultDataSpecsMixin
 from pylearn2.models import Model
 from pylearn2.monitor import Monitor
-from pylearn2.space import VectorSpace
+from pylearn2.space import CompositeSpace, VectorSpace
 
 log = logging.getLogger(__name__)
 
@@ -50,20 +50,31 @@ class SKLearnModel(Model):
     def __init__(self, model, input_dim, output_dim, monitoring_dataset=None):
         super(SKLearnModel, self).__init__()
         self.model = model
+        self.model._is_trained = False
         self.input_space = VectorSpace(input_dim)
         self.output_space = VectorSpace(output_dim)
 
         # set up monitor
         self.monitor = Monitor(self)
-        self.monitor.setup(monitoring_dataset, SKLearnCost(), None,
-                           1)
+        self.monitor.setup(monitoring_dataset, SKLearnCost(model), None, 1)
 
     def get_params(self):
         return []
 
+    def get_monitoring_data_specs(self):
+        space = CompositeSpace((self.get_input_space(),
+                                self.get_output_space()))
+        source = (self.get_input_source(), self.get_target_source())
+        return space, source
+
+    def fprop(self, state_below):
+        fprop = SKLearnPredictOp(self.model)(state_below)
+        return fprop
+
     def train_all(self, dataset):
         data = extract_data(dataset)
         self.model.fit(*data)
+        self.model._is_trained = True
 
     def continue_learning(self):
         return False
@@ -72,25 +83,66 @@ class SKLearnModel(Model):
 class SKLearnCost(DefaultDataSpecsMixin, Cost):
     supervised = True
 
+    def __init__(self, model):
+        self.model = model
+
     def expr(self, model, data, **kwargs):
         X, y = data
         y = T.argmax(y, axis=1)
-        score = SKLearnScoreOp()(model.model, X, y)
+        score = SKLearnScoreOp(self.model)(X, y)
         return score
 
 
 class SKLearnScoreOp(gof.Op):
-    def make_node(self, model, X, y):
-        model = T.as_tensor_variable(model)
+    def __init__(self, model):
+        super(SKLearnScoreOp, self).__init__()
+        self.model = model
+
+    def make_node(self, X, y):
         X = T.as_tensor_variable(X)
         y = T.as_tensor_variable(y)
-        output = [T.TensorType(config.floatX, []).make_variable(name='score')]
-        return gof.Apply(self, [model, X, y], output)
+        output = [T.scalar(name='score', dtype=config.floatX)]
+        return gof.Apply(self, [X, y], output)
 
     def perform(self, node, inputs, output_storage):
-        model, X, y = inputs
-        score = model.score(X, y)
+        X, y = inputs
+        score = 0.
+        if self.model._is_trained:
+            score = self.model.score(X, y)
         output_storage[0][0] = theano._asarray(score, dtype=config.floatX)
+
+
+class SKLearnPredictOp(gof.Op):
+    def __init__(self, model, predict_method=None):
+        super(SKLearnPredictOp, self).__init__()
+        self.model = model
+        self.predict_method = predict_method
+
+    def make_node(self, X):
+        X = T.as_tensor_variable(X)
+        output = [T.matrix(name='predict', dtype=config.floatX)]
+        return gof.Apply(self, [X], output)
+
+    def perform(self, node, inputs, output_storage):
+        X, = inputs
+        p = 0.
+        if self.model._is_trained:
+            if self.predict_method is None:
+                try:
+                    p = self.model.decision_function(X)
+                except AttributeError:
+                    try:
+                        p = self.model.predict_proba(X)
+                    except AttributeError:
+                        p = self.model.predict(X)
+            else:
+                if self.predict_method == 'decision_function':
+                    p = self.model.decision_function(X)
+                elif self.predict_method == 'predict_proba':
+                    p = self.model.predict_proba(X)
+                elif self.predict_method == 'predict':
+                    p = self.model.predict(X)
+        output_storage[0][0] = theano._asarray(p, dtype=config.floatX)
 
 
 
