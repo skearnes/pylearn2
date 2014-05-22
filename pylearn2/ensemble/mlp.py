@@ -21,21 +21,21 @@ from pylearn2.models.mlp import (CompositeLayer, geometric_mean_prediction,
                                  MLP, PretrainedLayer, Softmax)
 
 
-def resolve_ensemble_layer(ensemble):
+def resolve_ensemble_type(ensemble_type):
     """
     Resolve EnsembleLayer class from a string.
 
     Parameters
     ----------
-    ensemble : str
+    ensemble_type : str
         EnsembleLayer class identifier.
     """
-    if ensemble == 'average':
+    if ensemble_type == 'average':
         return Average
-    elif ensemble == 'geometric_mean':
+    elif ensemble_type == 'geometric_mean':
         return GeometricMean
     else:
-        raise NotImplementedError("Ensemble type '{}'.".format(ensemble))
+        raise NotImplementedError("Ensemble type '{}'.".format(ensemble_type))
 
 
 class EnsembleLayer(CompositeLayer):

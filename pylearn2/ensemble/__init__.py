@@ -15,7 +15,7 @@ __maintainer__ = "Steven Kearnes"
 import numpy as np
 
 from pylearn2.cross_validation import TrainCV
-from pylearn2.ensemble.mlp import resolve_ensemble_layer
+from pylearn2.ensemble.mlp import resolve_ensemble_type
 from pylearn2.models.mlp import MLP
 from pylearn2.train import Train
 
@@ -30,8 +30,8 @@ class GridSearchEnsemble(object):
         Grid search object that trains models and sets a best_models
         attribute. The best_models attribute possibly contains results for
         each fold of cross-validation.
-    ensemble : str
-        Ensemble type. Passed to resolve_ensemble_layer.
+    ensemble_type : str
+        Ensemble type. Passed to resolve_ensemble_type.
     dataset : Dataset or None
         Training dataset.
     dataset_iterator : iterable or None
@@ -58,7 +58,7 @@ class GridSearchEnsemble(object):
         TrainCVExtension objects for the parent TrainCV object. Only used
         if dataset_iterator is used.
     """
-    def __init__(self, grid_search, ensemble, dataset=None,
+    def __init__(self, grid_search, ensemble_type, dataset=None,
                  dataset_iterator=None, ensemble_args=None, model_args=None,
                  algorithm=None, save_path=None, save_freq=0, extensions=None,
                  allow_overwrite=True, save_folds=False, cv_extensions=None):
@@ -68,7 +68,7 @@ class GridSearchEnsemble(object):
         self.dataset = dataset
         self.dataset_iterator = dataset_iterator
         self.grid_search = grid_search
-        self.ensemble = ensemble
+        self.ensemble_type = ensemble_type
         if ensemble_args is None:
             ensemble_args = {}
         self.ensemble_args = ensemble_args
@@ -119,7 +119,7 @@ class GridSearchEnsemble(object):
                 'input_space' not in self.model_args):
             self.model_args['input_space'] = np.atleast_2d(
                 self.grid_search.best_models)[0, 0].input_space
-        klass = resolve_ensemble_layer(self.ensemble)
+        klass = resolve_ensemble_type(self.ensemble_type)
         if self.dataset_iterator is not None:
             assert self.grid_search.cv
             models = np.asarray(self.grid_search.best_models)
