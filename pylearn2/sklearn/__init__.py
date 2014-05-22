@@ -56,7 +56,7 @@ class SKLearnModel(Model):
         self.output_space = VectorSpace(output_dim)
 
         # set up monitor
-        self.monitor = Monitor(self)
+        #self.monitor = Monitor(self)
 
     def get_default_cost(self):
         cost = SKLearnCost(self.model)
@@ -85,19 +85,28 @@ class SKLearnModel(Model):
 
 
 class SKLearnTrainingAlgorithm(DefaultTrainingAlgorithm):
-    def __init__(self, monitoring_dataset=None):
+    def __init__(self, cost=None, monitoring_dataset=None):
         super(SKLearnTrainingAlgorithm, self).__init__(
-            batch_size=None, batches_per_iter=1, monitoring_batch_size=None,
-            monitoring_batches=1, monitoring_dataset=monitoring_dataset,
-            termination_criterion=None, set_batch_size=False)
-        self.learn_more = False  # only one epoch
+            monitoring_dataset=monitoring_dataset)
+        self.cost = cost
+        self.monitor = None
 
     def _synchronize_batch_size(self, model):
         pass
 
+    def setup(self, model, dataset):
+        if self.cost is None:
+            self.cost = model.get_default_cost()
+        self.monitor = Monitor.get_monitor(model)
+        if self.monitoring_dataset is not None:
+            self.monitor.setup(dataset=self.monitoring_dataset, cost=self.cost,
+                               batch_size=None, num_batches=1)
+        super(SKLearnTrainingAlgorithm, self).setup(model, dataset)
+
     def train(self, dataset):
         assert self.bSetup
         rval = self.model.train_all(dataset)
+        self.learn_more = False  # only one epoch
         return rval
 
 
