@@ -122,7 +122,7 @@ class GridSearchEnsemble(object):
         klass = resolve_ensemble_type(self.ensemble_type)
         if self.dataset_iterator is not None:
             assert self.grid_search.cv
-            models = np.asarray(self.grid_search.best_models)
+            models = self.grid_search.best_models
             if models.ndim == 1:
                 models = np.atleast_2d(models).T
             model_iterator = []
