@@ -19,7 +19,7 @@ def test_train_cv():
     trainer.main_loop()
 
 test_train_yaml = """
-!obj:pylearn2.sklearn.Train {
+!obj:pylearn2.sklearn_wrapper.Train {
   dataset: &train
     !obj:pylearn2.testing.datasets.random_one_hot_dense_design_matrix {
       rng: !obj:numpy.random.RandomState { seed: 1 },
@@ -38,7 +38,7 @@ test_train_yaml = """
 """
 
 test_train_cv_yaml = """
-!obj:pylearn2.sklearn.TrainCV {
+!obj:pylearn2.sklearn_wrapper.TrainCV {
   dataset_iterator:
   !obj:pylearn2.cross_validation.dataset_iterators.StratifiedDatasetKFold {
     dataset:
