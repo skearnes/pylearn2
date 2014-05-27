@@ -123,14 +123,12 @@ class GridSearchEnsemble(object):
         if self.dataset_iterator is not None:
             assert self.grid_search.cv
             models = self.grid_search.best_models
-            if models.ndim == 1:
-                models = np.atleast_2d(models).T
-            model_iterator = []
+            fold_models = []
             for this_models in models:
                 layer = klass(layers=this_models, **self.ensemble_args)
                 model = MLP(layers=[layer], **self.model_args)
-                model_iterator.append(model)
-            trainer = TrainCV(self.dataset_iterator, None, model_iterator,
+                fold_models.append(model)
+            trainer = TrainCV(self.dataset_iterator, fold_models,
                               self.algorithm, self.save_path, self.save_freq,
                               self.extensions, self.allow_overwrite,
                               self.save_folds, self.cv_extensions)
