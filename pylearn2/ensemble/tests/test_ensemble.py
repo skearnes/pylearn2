@@ -68,7 +68,7 @@ test_train_ensemble_grid_search_yaml = """
       monitor_channel: train_objective,
       n_best: 2,
     },
-    ensemble: 'average',
+    ensemble_type: 'average',
     algorithm: !obj:pylearn2.training_algorithms.bgd.BGD {
         batch_size: 5,
         line_search_mode: exhaustive,
@@ -140,7 +140,7 @@ test_train_ensemble_grid_search_with_cv_yaml = """
       monitor_channel: train_objective,
       n_best: 2,
     },
-    ensemble: 'average',
+    ensemble_type: 'average',
     algorithm: !obj:pylearn2.training_algorithms.bgd.BGD {
         batch_size: 5,
         line_search_mode: exhaustive,
