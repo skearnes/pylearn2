@@ -24,7 +24,8 @@ log = logging.getLogger(__name__)
 
 def extract_data(dataset):
     """
-    Extract data from a pylearn2 dataset.
+    Extract data from a pylearn2 dataset, possibly converting labels from
+    one-hot encoding. Does not support multi-target examples.
 
     Parameters
     ----------
@@ -32,9 +33,12 @@ def extract_data(dataset):
     """
     iterator = dataset.iterator(mode='sequential', num_batches=1,
                                 data_specs=dataset.data_specs)
-    data = tuple(iterator.next())
-    if len(data) == 2 and data[1].ndim == 2:
-        data = (data[0], np.argmax(data[1], axis=1))
+    data = list(iterator.next())
+    if data[1].squeeze().ndim == 2:
+        data[1] = np.argmax(data[1], axis=1)
+    else:
+        data[1] = data[1].squeeze()
+    data = tuple(data)
     return data
 
 
