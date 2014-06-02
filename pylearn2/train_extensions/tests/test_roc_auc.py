@@ -11,9 +11,6 @@ def test_roc_auc():
     trainer = yaml_parse.load(test_yaml)
     trainer.main_loop()
 
-    def test_roc_auc(self):
-        trainer = yaml_parse.load(test_yaml)
-        trainer.main_loop()
 
 def test_roc_auc_one_vs_rest():
     """Test one vs. rest RocAucChannel."""
@@ -54,12 +51,8 @@ test_yaml = """
         ],
     },
     algorithm: !obj:pylearn2.training_algorithms.bgd.BGD {
-        line_search_mode: 'exhaustive',
-        conjugate: 1,
         monitoring_dataset: {
             'train': *train,
-            'valid': !pkl: 'valid_dataset.pkl',
-            'test': !pkl: 'test_dataset.pkl',
         },
         batches_per_iter: 1,
         monitoring_batches: 1,
