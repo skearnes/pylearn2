@@ -41,7 +41,7 @@ from pylearn2.utils import safe_izip
 from pylearn2.utils import sharedX
 from pylearn2.utils import wraps
 
-from pylearn2.expr.nnet import (kl, compute_precision,
+from pylearn2.expr.nnet import (elemwise_kl, kl, compute_precision,
                                     compute_recall, compute_f1)
 
 # Only to be used by the deprecation warning wrapper functions
@@ -316,7 +316,7 @@ class Layer(Model):
 
     def get_weight_decay(self, coeff):
         """
-        Provides an expresion for a squared L2 penalty on the weights.
+        Provides an expression for a squared L2 penalty on the weights.
 
         Parameters
         ----------
@@ -341,7 +341,7 @@ class Layer(Model):
 
     def get_l1_weight_decay(self, coeff):
         """
-        Provides an expresion for an L1 penalty on the weights.
+        Provides an expression for an L1 penalty on the weights.
 
         Parameters
         ----------
@@ -566,13 +566,6 @@ class MLP(Layer):
 
     @wraps(Layer.get_monitoring_channels_from_state)
     def get_monitoring_channels_from_state(self, state, target=None):
-        #
-        # Notes
-        # -----
-        # We are only monitoring the last layer for data dependent channels.
-        # If you want to monitor every inner layer you should change the
-        # get_monitoring_channels_from_state method.
-
         warnings.warn("Layer.get_monitoring_channels_from_state is " + \
                     "deprecated. Use get_layer_monitoring_channels " + \
                     "instead. Layer.get_monitoring_channels_from_state " + \
@@ -622,72 +615,30 @@ class MLP(Layer):
                                         state=None, targets=None):
 
         rval = OrderedDict()
-        if state_below is not None:
-            state = state_below
+        state = state_below
 
-            for layer in self.layers:
-                # We don't go through all the inner layers recursively
-                state = layer.fprop(state)
-                args = [None, state]
-                if layer is self.layers[-1] and targets is not None:
-                    args.append(targets)
-                ch = layer.get_layer_monitoring_channels(*args)
-                if not isinstance(ch, OrderedDict):
-                    raise TypeError(str((type(ch), layer.layer_name)))
-                for key in ch:
-                    value = ch[key]
-                    doc = get_monitor_doc(value)
-                    if doc is None:
-                        doc = str(type(layer)) + \
-                            ".get_monitoring_channels_from_state did" + \
-                            " not provide any further documentation for" + \
-                            " this channel."
-                    doc = 'This channel came from a layer called "' + \
-                            layer.layer_name + '" of an MLP.\n' + doc
-                    value.__doc__ = doc
-                    rval[layer.layer_name+'_'+key] = value
-
-
-        elif state is not None:
-
-            for layer in self.layers:
-                if layer is self.layers[-1]:
-                    args = [None, state]
-                    if targets is not None:
-                        args.append(targets)
-                    ch = layer.get_layer_monitoring_channels(*args)
-                else:
-                    ch = layer.get_layer_monitoring_channels()
-                for key in ch:
-                    value = ch[key]
-                    doc = get_monitor_doc(value)
-                    if doc is None:
-                        doc = str(type(layer)) + \
-                            ".get_monitoring_channels did" + \
-                            " not provide any further documentation for" + \
-                            " this channel."
-                    doc = 'This channel came from a layer called "' + \
-                            layer.layer_name + '" of an MLP.\n' + doc
-                    value.__doc__ = doc
-                    rval[layer.layer_name+'_'+key] = value
-
-        else:
-            for layer in self.layers:
-                ch = layer.get_layer_monitoring_channels()
-                if not isinstance(ch, OrderedDict):
-                    raise TypeError(str((type(ch), layer.layer_name)))
-                for key in ch:
-                    value = ch[key]
-                    doc = get_monitor_doc(value)
-                    if doc is None:
-                        doc = str(type(layer)) + \
-                            ".get_monitoring_channels_from_state did" + \
-                            " not provide any further documentation for" + \
-                            " this channel."
-                    doc = 'This channel came from a layer called "' + \
-                            layer.layer_name + '" of an MLP.\n' + doc
-                    value.__doc__ = doc
-                    rval[layer.layer_name+'_'+key] = value
+        for layer in self.layers:
+            # We don't go through all the inner layers recursively
+            state_below = state
+            state = layer.fprop(state)
+            args = [state_below, state]
+            if layer is self.layers[-1] and targets is not None:
+                args.append(targets)
+            ch = layer.get_layer_monitoring_channels(*args)
+            if not isinstance(ch, OrderedDict):
+                raise TypeError(str((type(ch), layer.layer_name)))
+            for key in ch:
+                value = ch[key]
+                doc = get_monitor_doc(value)
+                if doc is None:
+                    doc = str(type(layer)) + \
+                        ".get_monitoring_channels_from_state did" + \
+                        " not provide any further documentation for" + \
+                        " this channel."
+                doc = 'This channel came from a layer called "' + \
+                        layer.layer_name + '" of an MLP.\n' + doc
+                value.__doc__ = doc
+                rval[layer.layer_name+'_'+key] = value
 
         return rval
 
@@ -2587,8 +2538,6 @@ class Sigmoid(Linear):
         Y_hat : Variable
             predictions made by the sigmoid layer. Y_hat must be generated by
             fprop, i.e., it must be a symbolic sigmoid.
-        batch_axis : list
-            list of axes to compute average kl divergence across.
 
         Returns
         -------
@@ -2612,6 +2561,12 @@ class Sigmoid(Linear):
         batch_axis = self.output_space.get_batch_axis()
         div = kl(Y=Y, Y_hat=Y_hat, batch_axis=batch_axis)
         return div
+
+    @wraps(Layer.cost_matrix)
+    def cost_matrix(self, Y, Y_hat):
+        rval = elemwise_kl(Y, Y_hat)
+        assert rval.ndim == 2
+        return rval
 
     def get_detection_channels_from_state(self, state, target):
         """
@@ -3283,7 +3238,7 @@ class ConvElemwise(Layer):
             output_shape = [(self.input_space.shape[0] + self.kernel_shape[0])
                             / self.kernel_stride[0] - 1,
                             (self.input_space.shape[1] + self.kernel_shape[1])
-                            / self.kernel_stride_stride[1] - 1]
+                            / self.kernel_stride[1] - 1]
 
         self.detector_space = Conv2DSpace(shape=output_shape,
                                           num_channels=self.output_channels,
