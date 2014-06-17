@@ -96,6 +96,22 @@ def get_model(trainer, channel_name=None, higher_is_better=False):
     return model
 
 
+def get_score(model, channel_name):
+    """
+    Get the score for this model.
+
+    Parameters
+    ----------
+    trainer : Train or TrainCV
+        Trainer.
+    channel_name : str
+        Monitor channel to score.
+    """
+    monitor = model.monitor
+    score = monitor.channels[channel_name].val_record[-1]
+    return score
+
+
 def batch_train(trainers, time_budget=None, parallel=False,
                 client_kwargs=None):
     """
