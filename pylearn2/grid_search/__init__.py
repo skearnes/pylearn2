@@ -32,7 +32,6 @@ except ImportError:
 
 from pylearn2.config import yaml_parse
 from pylearn2.cross_validation import TrainCV
-from pylearn2.grid_search.misc import UniqueParameterSampler
 from pylearn2.train_extensions.best_params import MonitorBasedSaveBest
 from pylearn2.utils import serial
 
@@ -188,7 +187,6 @@ class GridSearch(object):
                 else:
                     call = view.map_async(self.train, [trainer], [time_budget])
                     calls.append(call)
-                del trainer
 
             # extract scores
             for trainer, call in zip(self.get_trainers(), calls):
@@ -204,7 +202,7 @@ class GridSearch(object):
                                              self.higher_is_better)
                     score, = self.get_scores(models, self.monitor_channel)
                 scores.append(score)
-                del trainer
+
         else:
             for trainer in self.get_trainers():
                 trainer.main_loop(time_budget)
@@ -217,7 +215,7 @@ class GridSearch(object):
                                              self.higher_is_better)
                     score, = self.get_scores(models, self.monitor_channel)
                 scores.append(score)
-                del trainer
+
         scores = np.asarray(scores)
         self.scores = scores
 
@@ -419,38 +417,6 @@ class GridSearch(object):
                 trainer.main_loop(time_budget)
 
 
-class RandomGridSearch(GridSearch):
-    """
-    Hyperparameter grid search using a YAML template and random selection
-    of a subset of the grid points.
-
-    Parameters
-    ----------
-    n_iter : int
-        Number of grid points to sample.
-    random_state : int, optional
-        Random seed.
-    kwargs : dict, optional
-        Keyword arguments for GridSearch.
-    """
-    def __init__(self, n_iter, random_state=None, **kwargs):
-        self.n_iter = n_iter
-        self.random_state = random_state
-        super(RandomGridSearch, self).__init__(**kwargs)
-
-    def get_param_grid(self, param_grid):
-        """
-        Construct a parameter grid.
-
-        Parameters
-        ----------
-        param_grid : dict
-            Parameter grid.
-        """
-        return UniqueParameterSampler(param_grid, self.n_iter, None,
-                                      self.random_state)
-
-
 class GridSearchCV(GridSearch):
     """
     Use a TrainCV template to select the best hyperparameters by cross-
@@ -563,34 +529,3 @@ class GridSearchCV(GridSearch):
         else:
             for trainer in trainers:
                 trainer.main_loop(time_budget)
-
-
-class RandomGridSearchCV(GridSearchCV):
-    """
-    GridSearchCV with random selection of parameter grid points.
-
-    Parameters
-    ----------
-    n_iter : int
-        Number of grid points to sample.
-    random_state : int, optional
-        Random seed.
-    kwargs : dict, optional
-        Keyword arguments for GridSearchCV.
-    """
-    def __init__(self, n_iter, random_state=None, **kwargs):
-        self.n_iter = n_iter
-        self.random_state = random_state
-        super(RandomGridSearchCV, self).__init__(**kwargs)
-
-    def get_param_grid(self, param_grid):
-        """
-        Construct a parameter grid.
-
-        Parameters
-        ----------
-        param_grid : dict
-            Parameter grid.
-        """
-        return UniqueParameterSampler(param_grid, self.n_iter, None,
-                                      self.random_state)
