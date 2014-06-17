@@ -68,7 +68,7 @@ class UniqueParameterSampler(object):
 
 def get_model(trainer, channel_name=None, higher_is_better=False):
     """
-    Extract the model(s) from this trainer, possibly taking the best model
+    Extract the model from this trainer, possibly taking the best model
     from MonitorBasedSaveBest.
 
     Parameters

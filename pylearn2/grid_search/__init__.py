@@ -22,7 +22,6 @@ __credits__ = ["Steven Kearnes", "Bharath Ramsundar"]
 __license__ = "3-clause BSD"
 __maintainer__ = "Steven Kearnes"
 
-import itertools as it
 import numpy as np
 import os
 try:
@@ -32,11 +31,8 @@ except ImportError:
 
 from pylearn2.config import yaml_parse
 from pylearn2.cross_validation import TrainCV
-from pylearn2.cross_validation.dataset_iterators import DatasetCV
-from pylearn2.datasets.dataset import Dataset
 from pylearn2.grid_search.misc import (batch_train, get_model, get_score,
                                        UniqueParameterSampler)
-from pylearn2.train import SerializationGuard
 from pylearn2.utils import serial
 
 
@@ -141,10 +137,18 @@ class GridSearch(object):
             raise RuntimeError("Could not import from sklearn.")
         return ParameterGrid(param_grid)
 
+    def get_trainers(self):
+        """
+        Build a generator for trainers on each grid point.
+        """
+        trainers = (yaml_parse.load(self.template % params)
+                    for params in self.params)
+        return trainers
+
     def score_grid(self, time_budget=None, parallel=False, client_kwargs=None,
                    view_flags=None):
         """
-        Construct trainers and run main_loop, then return score, if
+        Construct trainers and run main_loop, then return scores, if
         requested.
 
         Parameters
@@ -160,30 +164,76 @@ class GridSearch(object):
         view_flags : dict, optional
             Flags for IPython.parallel LoadBalancedView.
         """
+        scores = []
+
         if parallel:
             from IPython.parallel import Client
 
             if client_kwargs is None:
                 client_kwargs = {}
+            if view_flags is None:
+                view_flags = {}
             client = Client(**client_kwargs)
             view = client.load_balanced_view()
             view.set_flags(**view_flags)
 
-            fn = lambda *args: view.map(*args, block=False)
+            calls = []
+            for trainer in self.get_trainers():
+                if isinstance(trainer, TrainCV):
+                    trainer.setup()
+                    call = view.map_async(
+                        self.train, trainer.trainers,
+                        [time_budget] * len(trainer.trainers))
+                    calls.append(call)
+                else:
+                    call = view.map_async(self.train, [trainer], [time_budget])
+                    calls.append(call)
+            for trainer, call in zip(self.get_trainers(), calls):
+                if isinstance(trainer, TrainCV):
+                    trainer.trainers = call.get()
+                    trainer.save()
+                    models = [get_model(t, self.monitor_channel,
+                                        self.higher_is_better)
+                              for t in trainer.trainers]
+                    scores.append([get_score(model, self.monitor_channel)
+                                   for model in models])
+                else:
+                    trainer, = call.get()
+                    model = get_model(trainer, self.monitor_channel,
+                                      self.higher_is_better)
+                    scores.append(get_score(model, self.monitor_channel))
         else:
-            fn = map
-
-        r = lambda x: it.repeat(x, len(self.params))
-        call = fn(
-            self.score_grid_point, r(self.template), self.params,
-            r(time_budget), r(parallel), r(client_kwargs), r(view_flags),
-            r(self.monitor_channel), r(self.higher_is_better))
-        if parallel:
-            scores = call.get()
-        else:
-            scores = call
-        scores = np.asarray(scores).squeeze()
+            for trainer in self.get_trainers():
+                trainer.main_loop(time_budget)
+                if isinstance(trainer, TrainCV):
+                    models = [get_model(t, self.monitor_channel,
+                                        self.higher_is_better)
+                              for t in trainer.trainers]
+                    scores.append([get_score(model, self.monitor_channel)
+                                   for model in models])
+                else:
+                    model = get_model(trainer, self.monitor_channel,
+                                      self.higher_is_better)
+                    scores.append(get_score(model, self.monitor_channel))
+        scores = np.asarray(scores)
         self.scores = scores
+
+    @staticmethod
+    def train(trainer, time_budget=None):
+        """
+        Run trainer main_loop and return trainer. This method is static so
+        it can be used in parallel execution.
+
+        Parameters
+        ----------
+        trainer : Train
+            Trainer.
+        time_budget : int, optional
+            The maximum number of seconds before interrupting
+            training. Default is `None`, no time limit.
+        """
+        trainer.main_loop(time_budget)
+        return trainer
 
     @staticmethod
     def score_grid_point(template, params, time_budget=None, parallel=False,
@@ -246,7 +296,13 @@ class GridSearch(object):
             sort = np.argsort(self.scores, axis=0)
             if self.higher_is_better:
                 sort = sort[::-1]
-            best_scores = self.scores[sort][:self.n_best]
+            if self.scores.ndim == 2:
+                best_scores = np.zeros_like(self.scores)
+                for i in xrange(self.scores.shape[1]):
+                    best_scores[:, i] = self.scores[:, i][sort[:, i]]
+                best_scores = best_scores[:self.n_best]
+            else:
+                best_scores = self.scores[sort][:self.n_best]
             best_params = self.params[sort][:self.n_best]
 
             # update save_path and best_save_path for best_params
@@ -345,7 +401,7 @@ class GridSearch(object):
                         {'train': dataset})
                 trainers.append(trainer)
 
-        # this could be parallelized better with batch_train
+        # this could be parallelized better when n_best > 1
         for trainer in trainers:
             if isinstance(trainer, TrainCV):
                 trainer.main_loop(time_budget, parallel, client_kwargs,
