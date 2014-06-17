@@ -13,7 +13,8 @@ Grid search protocol:
 * If monitor_channel is specified, extract score for each model.
 * If retrain is True, create n_best new trainers (using retrain_kwargs) and
   run each main_loop.
-* The output written to save_path is a dict of grid points and scores.
+* The output written to save_path is a dict containing grid points and
+  scores.
 """
 
 __author__ = "Steven Kearnes"
@@ -500,9 +501,19 @@ class GridSearchCV(GridSearch):
                 assert 'train' in retrain_kwargs['dataset']
         self.retrain_kwargs = retrain_kwargs
 
-    def score_grid(self, time_budget=None, parallel=False, client_kwargs=None,
-                   view_flags=None):
-        super(GridSearchCV, self).score_grid()
+    def score_grid(self, *args, **kwargs):
+        """
+        Get scores for each grid point and then average scores across
+        cross-validation folds.
+
+        Parameters
+        ----------
+        args : list
+            Positional arguments.
+        kwargs : dict
+            Keyword arguments.
+        """
+        super(GridSearchCV, self).score_grid(*args, **kwargs)
         self.scores = np.mean(self.scores, axis=1)
 
     def retrain_best_models(self, time_budget=None, parallel=False,
