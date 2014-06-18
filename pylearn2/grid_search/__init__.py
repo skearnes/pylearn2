@@ -205,6 +205,9 @@ class GridSearch(object):
                                              self.higher_is_better)
                     score, = self.get_scores(models, self.monitor_channel)
                 scores.append(score)
+
+                # cleanup
+                view.purge_results(call.msg_ids)
                 del trainer, call, models
                 gc.collect()
 
