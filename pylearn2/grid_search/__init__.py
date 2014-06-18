@@ -251,6 +251,8 @@ class GridSearch(object):
         trainer.main_loop(time_budget)
 
         # reduce memory footprint
+        # trained models are NOT returned to hub and will be lost if they
+        # are not saved by the main_loop of the trainer.
         if isinstance(trainer, TrainCV):
             trainers = trainer.trainers
         else:
@@ -258,6 +260,9 @@ class GridSearch(object):
         for trainer in trainers:
             trainer.dataset = Empty()  # needed for save
             trainer.algorithm = None
+            monitor = trainer.model.monitor
+            trainer.model = Empty()
+            trainer.model.monitor = monitor
         gc.collect()
 
         return trainer
@@ -370,10 +375,10 @@ class GridSearch(object):
         """
         self.score_grid(time_budget, parallel, client_kwargs, view_flags)
         self.get_best_params()
+        self.save()
         if self.retrain:
             self.retrain_best_models(
                 time_budget, parallel, client_kwargs, view_flags)
-        self.save()
 
     def save(self):
         """Save params and scores."""
