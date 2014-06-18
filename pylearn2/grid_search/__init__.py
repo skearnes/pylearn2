@@ -188,6 +188,8 @@ class GridSearch(object):
                 else:
                     call = view.map_async(self.train, [trainer], [time_budget])
                     calls.append(call)
+
+                # cleanup
                 del trainer
                 gc.collect()
 
@@ -223,6 +225,8 @@ class GridSearch(object):
                                              self.higher_is_better)
                     score, = self.get_scores(models, self.monitor_channel)
                 scores.append(score)
+
+                # cleanup
                 del trainer, models
                 gc.collect()
 
@@ -237,13 +241,24 @@ class GridSearch(object):
 
         Parameters
         ----------
-        trainer : Train or TrainCV
+        trainer : Train
             Trainer.
         time_budget : int, optional
             The maximum number of seconds before interrupting
             training. Default is `None`, no time limit.
         """
         trainer.main_loop(time_budget)
+
+        # reduce memory footprint
+        if isinstance(trainer, TrainCV):
+            trainers = trainer.trainers
+        else:
+            trainers = [trainer]
+        for trainer in trainers:
+            trainer.dataset = None
+            trainer.algorithm = None
+        gc.collect()
+
         return trainer
 
     @staticmethod
