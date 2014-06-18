@@ -255,7 +255,7 @@ class GridSearch(object):
         else:
             trainers = [trainer]
         for trainer in trainers:
-            trainer.dataset = None
+            trainer.dataset = type('Empty', (object,), {})
             trainer.algorithm = None
         gc.collect()
 
