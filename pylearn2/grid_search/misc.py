@@ -12,6 +12,14 @@ import numpy as np
 import sys
 
 
+class Empty(object):
+    """
+    Empty class, when None won't do (for example, when attributes are
+    assigned to the object).
+    """
+    pass
+
+
 def random_seeds(size, random_state=None):
     """
     Generate random seeds. This function is intended for use in a pylearn2

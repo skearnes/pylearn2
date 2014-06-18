@@ -33,6 +33,7 @@ except ImportError:
 
 from pylearn2.config import yaml_parse
 from pylearn2.cross_validation import TrainCV
+from pylearn2.grid_search.misc import Empty
 from pylearn2.train_extensions.best_params import MonitorBasedSaveBest
 from pylearn2.utils import serial
 
@@ -255,7 +256,7 @@ class GridSearch(object):
         else:
             trainers = [trainer]
         for trainer in trainers:
-            trainer.dataset = type('Empty', (object,), {})
+            trainer.dataset = Empty()  # needed for save
             trainer.algorithm = None
         gc.collect()
 
