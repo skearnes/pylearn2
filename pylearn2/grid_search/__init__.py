@@ -23,6 +23,7 @@ __credits__ = ["Steven Kearnes", "Bharath Ramsundar"]
 __license__ = "3-clause BSD"
 __maintainer__ = "Steven Kearnes"
 
+import gc
 import numpy as np
 import os
 try:
@@ -187,6 +188,8 @@ class GridSearch(object):
                 else:
                     call = view.map_async(self.train, [trainer], [time_budget])
                     calls.append(call)
+                del trainer
+                gc.collect()
 
             # extract scores
             for trainer, call in zip(self.get_trainers(), calls):
@@ -202,6 +205,8 @@ class GridSearch(object):
                                              self.higher_is_better)
                     score, = self.get_scores(models, self.monitor_channel)
                 scores.append(score)
+                del trainer, call, models
+                gc.collect()
 
         else:
             for trainer in self.get_trainers():
@@ -215,6 +220,8 @@ class GridSearch(object):
                                              self.higher_is_better)
                     score, = self.get_scores(models, self.monitor_channel)
                 scores.append(score)
+                del trainer, models
+                gc.collect()
 
         scores = np.asarray(scores)
         self.scores = scores
