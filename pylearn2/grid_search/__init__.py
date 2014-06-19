@@ -67,19 +67,19 @@ class GridSearch(object):
         %(best_save_path)s.
     allow_overwrite : bool, optional (default True)
         Whether to overwrite pre-existing output file matching save_path.
-    retrain : bool, optional (default False)
-        Whether to retrain the best model(s). The training dataset is the
-        union of the training and validation sets (if any).
     n_best : int, optional (default 1)
         Maximum number of models to retrain, ranked by monitor_channel
         value.
+    retrain : bool, optional (default False)
+        Whether to retrain the best model(s). The training dataset is the
+        union of the training and validation sets (if any).
     retrain_kwargs : dict, optional
         Keyword arguments to modify the template trainer prior to
         retraining. Must contain 'dataset' or 'dataset_iterator'.
     """
     def __init__(self, template, param_grid, monitor_channel,
                  higher_is_better=False, save_path=None, allow_overwrite=True,
-                 retrain=False, n_best=1, retrain_kwargs=None):
+                 n_best=1, retrain=False, retrain_kwargs=None):
         self.template = template
         for key, value in param_grid.items():
             param_grid[key] = np.atleast_1d(value)  # must be iterable
@@ -87,12 +87,12 @@ class GridSearch(object):
         self.allow_overwrite = allow_overwrite
         self.monitor_channel = monitor_channel
         self.higher_is_better = higher_is_better
+        self.n_best = n_best
+        self.retrain = retrain
         if retrain:
             assert retrain_kwargs is not None
             assert ('dataset' in retrain_kwargs or
                     'dataset_iterator' in retrain_kwargs)
-        self.retrain = retrain
-        self.n_best = n_best
         self.retrain_kwargs = retrain_kwargs
 
         # construct parameter grid
@@ -152,8 +152,7 @@ class GridSearch(object):
         Parameters
         ----------
         time_budget : int, optional
-            The maximum number of seconds before interrupting
-            training. Default is `None`, no time limit.
+            Maximum number of seconds before interrupting training.
         parallel : bool, optional (default False)
             Whether to train subtrainers in parallel using
             IPython.parallel.
@@ -199,7 +198,12 @@ class GridSearch(object):
                 gc.collect()
 
             # get scores
-            scores = [call.get() for call in calls]
+            scores = []
+            for call in calls:
+                this_scores = call.get()
+                if len(this_scores) == 1:
+                    this_scores, = this_scores
+                scores.append(this_scores)
 
         else:
             scores = []
@@ -217,11 +221,32 @@ class GridSearch(object):
         self.scores = scores
 
     @staticmethod
+    def train(trainer, time_budget=None):
+        """
+        Run trainer main_loop. This is a static method so it can be used in
+        parallel.
+
+        Parameters
+        ----------
+        trainer : Train or TrainCV
+            Trainer.
+        time_budget : int, optional
+            Maximum number of seconds before interrupting training.
+        """
+        trainer.main_loop(time_budget)
+
+    @staticmethod
     def train_and_score(trainer, monitor_channel, higher_is_better=False,
                         time_budget=None):
         """
         Run trainer main_loop and score the resulting model. This is a
         static method so it can be used in parallel.
+
+        To save memory on the hub, the trained model is NOT returned to the
+        hub when this method is run in parallel. TrainCV templates trained
+        in parallel will not have their save() method called. Use
+        save_folds=True if you want to inspect the trained models when
+        using a TrainCV template.
 
         Parameters
         ----------
@@ -232,6 +257,8 @@ class GridSearch(object):
         higher_is_better : bool, optional (default False)
             Whether higher monitor_channel values correspond to better
             models.
+        time_budget : int, optional
+            Maximum number of seconds before interrupting training.
         """
         trainer.main_loop(time_budget)
         models = get_models(trainer, monitor_channel, higher_is_better)
@@ -278,8 +305,7 @@ class GridSearch(object):
         Parameters
         ----------
         time_budget : int, optional
-            The maximum number of seconds before interrupting
-            training. Default is `None`, no time limit.
+            Maximum number of seconds before interrupting training.
         parallel : bool, optional (default False)
             Whether to train subtrainers in parallel using
             IPython.parallel.
@@ -314,8 +340,7 @@ class GridSearch(object):
         Parameters
         ----------
         time_budget : int, optional
-            The maximum number of seconds before interrupting
-            training. Default is `None`, no time limit.
+            Maximum number of seconds before interrupting training.
         parallel : bool, optional (default False)
             Whether to train subtrainers in parallel using
             IPython.parallel.
@@ -354,7 +379,7 @@ class GridSearch(object):
                         {'train': dataset})
                 trainers.append(trainer)
 
-        # this could be parallelized better when n_best > 1
+        # this could be parallelized better when self.n_best > 1
         for trainer in trainers:
             if isinstance(trainer, TrainCV):
                 trainer.main_loop(time_budget, parallel, client_kwargs,
@@ -388,10 +413,10 @@ class GridSearchCV(GridSearch):
         %(best_save_path)s fields.
     allow_overwrite : bool, optional (default True)
         Whether to overwrite pre-existing output file matching save_path.
-    retrain : bool, optional (default True)
-        Whether to train the best model(s).
     n_best : int, optional (default 1)
         Maximum number of models to save, ranked by monitor_channel value.
+    retrain : bool, optional (default True)
+        Whether to train the best model(s).
     retrain_kwargs : dict, optional
         Keyword arguments to modify the template trainer prior to
         retraining. If not provided when retrain is True, the dataset is
@@ -401,12 +426,11 @@ class GridSearchCV(GridSearch):
     """
     def __init__(self, template, param_grid, monitor_channel,
                  higher_is_better=False, save_path=None, allow_overwrite=True,
-                 retrain=True, n_best=1, retrain_kwargs=None):
+                 n_best=1, retrain=True, retrain_kwargs=None):
         super(GridSearchCV, self).__init__(
             template, param_grid, monitor_channel, higher_is_better, save_path,
-            allow_overwrite)
+            allow_overwrite, n_best)
         self.retrain = retrain
-        self.n_best = n_best
         if retrain_kwargs is not None:
             assert 'dataset' in retrain_kwargs
             if isinstance(retrain_kwargs['dataset'], dict):
@@ -471,7 +495,7 @@ class GridSearchCV(GridSearch):
             client = Client(**client_kwargs)
             view = client.load_balanced_view()
             view.set_flags(**view_flags)
-            view.map_sync(lambda t: t.main_loop(time_budget), trainers)
+            view.map_sync(self.train, trainers, [time_budget] * len(trainers))
         else:
             for trainer in trainers:
                 trainer.main_loop(time_budget)
