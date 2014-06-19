@@ -30,6 +30,7 @@ try:
     from sklearn.grid_search import ParameterGrid
 except ImportError:
     ParameterGrid = None
+import zlib
 
 from pylearn2.config import yaml_parse
 from pylearn2.cross_validation import TrainCV
@@ -197,13 +198,15 @@ class GridSearch(object):
             # extract scores
             for trainer, call in zip(self.get_trainers(), calls):
                 if isinstance(trainer, TrainCV):
-                    trainer.trainers = call.get()
+                    trainer.trainers = serial.from_string(
+                        zlib.decompress(call.get()))
                     trainer.save()
                     models = self.get_models(trainer, self.monitor_channel,
                                              self.higher_is_better)
                     score = self.get_scores(models, self.monitor_channel)
                 else:
-                    trainer, = call.get()
+                    trainer, = serial.from_string(
+                        zlib.decompress(call.get()))
                     models = self.get_models(trainer, self.monitor_channel,
                                              self.higher_is_better)
                     score, = self.get_scores(models, self.monitor_channel)
@@ -250,6 +253,8 @@ class GridSearch(object):
         """
         trainer.main_loop(time_budget)
 
+        # reduce memory usage
+
         # reduce memory footprint
         # trained models are NOT returned to hub and will be lost if they
         # are not saved by the main_loop of the trainer.
@@ -260,10 +265,12 @@ class GridSearch(object):
         for trainer in trainers:
             trainer.dataset = Empty()  # needed for save
             trainer.algorithm = None
-            monitor = trainer.model.monitor
-            trainer.model = Empty()
-            trainer.model.monitor = monitor
+            #monitor = trainer.model.monitor
+            #trainer.model = Empty()
+            #trainer.model.monitor = monitor
         gc.collect()
+        compressed = zlib.compress(serial.to_string(trainer))
+        return compressed
 
         return trainer
 
