@@ -24,18 +24,17 @@ __license__ = "3-clause BSD"
 __maintainer__ = "Steven Kearnes"
 
 import gc
+import itertools as it
 import numpy as np
 import os
 try:
     from sklearn.grid_search import ParameterGrid
 except ImportError:
     ParameterGrid = None
-import zlib
 
 from pylearn2.config import yaml_parse
 from pylearn2.cross_validation import TrainCV
-from pylearn2.grid_search.misc import Empty
-from pylearn2.train_extensions.best_params import MonitorBasedSaveBest
+from pylearn2.grid_search.misc import get_models, get_scores
 from pylearn2.utils import serial
 
 
@@ -58,29 +57,29 @@ class GridSearch(object):
         {'n': [1, 2, 3]} (when no %(n)s field exists in the template) will
         cause each model to be trained three times; useful when working
         with stochastic models.
+    monitor_channel : str
+        Monitor channel to use to compare models.
+    higher_is_better : bool, optional (default False)
+        Whether higher monitor_channel values correspond to better models.
     save_path : str, optional
         Output filename for scores. Also used (with modification) for
         individual models if template contains %(save_path)s or
         %(best_save_path)s.
     allow_overwrite : bool, optional (default True)
         Whether to overwrite pre-existing output file matching save_path.
-    monitor_channel : str, optional
-        Monitor channel to use to compare models.
-    higher_is_better : bool, optional (default False)
-        Whether higher monitor_channel values correspond to better models.
-    n_best : int, optional
-        Maximum number of models to save, ranked by monitor_channel value.
     retrain : bool, optional (default False)
         Whether to retrain the best model(s). The training dataset is the
         union of the training and validation sets (if any).
+    n_best : int, optional (default 1)
+        Maximum number of models to retrain, ranked by monitor_channel
+        value.
     retrain_kwargs : dict, optional
         Keyword arguments to modify the template trainer prior to
         retraining. Must contain 'dataset' or 'dataset_iterator'.
     """
-    def __init__(self, template, param_grid, save_path=None,
-                 allow_overwrite=True, monitor_channel=None,
-                 higher_is_better=False, n_best=None, retrain=False,
-                 retrain_kwargs=None):
+    def __init__(self, template, param_grid, monitor_channel,
+                 higher_is_better=False, save_path=None, allow_overwrite=True,
+                 retrain=False, n_best=1, retrain_kwargs=None):
         self.template = template
         for key, value in param_grid.items():
             param_grid[key] = np.atleast_1d(value)  # must be iterable
@@ -88,13 +87,12 @@ class GridSearch(object):
         self.allow_overwrite = allow_overwrite
         self.monitor_channel = monitor_channel
         self.higher_is_better = higher_is_better
-        self.n_best = n_best
-        self.retrain = retrain
         if retrain:
-            assert n_best is not None
             assert retrain_kwargs is not None
             assert ('dataset' in retrain_kwargs or
                     'dataset_iterator' in retrain_kwargs)
+        self.retrain = retrain
+        self.n_best = n_best
         self.retrain_kwargs = retrain_kwargs
 
         # construct parameter grid
@@ -149,8 +147,7 @@ class GridSearch(object):
     def score_grid(self, time_budget=None, parallel=False, client_kwargs=None,
                    view_flags=None):
         """
-        Construct trainers and run main_loop, then return scores, if
-        requested.
+        Get scores for each sampled grid point.
 
         Parameters
         ----------
@@ -165,8 +162,6 @@ class GridSearch(object):
         view_flags : dict, optional
             Flags for IPython.parallel LoadBalancedView.
         """
-        scores = []
-
         if parallel:
             from IPython.parallel import Client
 
@@ -179,158 +174,68 @@ class GridSearch(object):
             view.set_flags(**view_flags)
 
             # submit jobs
+            # trainers must be instantiated so that CV and grid search can
+            # be parallelized simultaneously.
             calls = []
             for trainer in self.get_trainers():
                 if isinstance(trainer, TrainCV):
                     trainer.setup()
+                    n = len(trainer.trainers)
                     call = view.map_async(
-                        self.train, trainer.trainers,
-                        [time_budget] * len(trainer.trainers))
+                        self.train_and_score, trainer.trainers,
+                        it.repeat(self.monitor_channel, n),
+                        it.repeat(self.higher_is_better, n),
+                        it.repeat(time_budget, n))
                     calls.append(call)
                 else:
-                    call = view.map_async(self.train, [trainer], [time_budget])
+                    call = view.map_async(
+                        self.train_and_score, [trainer],
+                        [self.monitor_channel], [self.higher_is_better],
+                        [time_budget])
                     calls.append(call)
 
                 # cleanup
                 del trainer
                 gc.collect()
 
-            # extract scores
-            for trainer, call in zip(self.get_trainers(), calls):
-                if isinstance(trainer, TrainCV):
-                    trainer.trainers = serial.from_string(
-                        zlib.decompress(call.get()))
-                    trainer.save()
-                    models = self.get_models(trainer, self.monitor_channel,
-                                             self.higher_is_better)
-                    score = self.get_scores(models, self.monitor_channel)
-                else:
-                    trainer, = serial.from_string(
-                        zlib.decompress(call.get()))
-                    models = self.get_models(trainer, self.monitor_channel,
-                                             self.higher_is_better)
-                    score, = self.get_scores(models, self.monitor_channel)
-                scores.append(score)
-
-                # cleanup
-                view.purge_results(call.msg_ids)
-                del trainer, call, models
-                gc.collect()
+            # get scores
+            scores = [call.get() for call in calls]
 
         else:
+            scores = []
             for trainer in self.get_trainers():
-                trainer.main_loop(time_budget)
-                if isinstance(trainer, TrainCV):
-                    models = self.get_models(trainer, self.monitor_channel,
-                                             self.higher_is_better)
-                    score = self.get_scores(models, self.monitor_channel)
-                else:
-                    models = self.get_models(trainer, self.monitor_channel,
-                                             self.higher_is_better)
-                    score, = self.get_scores(models, self.monitor_channel)
+                score = self.train_and_score(
+                    trainer, self.monitor_channel, self.higher_is_better,
+                    time_budget)
                 scores.append(score)
 
                 # cleanup
-                del trainer, models
+                del trainer
                 gc.collect()
 
         scores = np.asarray(scores)
         self.scores = scores
 
     @staticmethod
-    def train(trainer, time_budget=None):
+    def train_and_score(trainer, monitor_channel, higher_is_better=False,
+                        time_budget=None):
         """
-        Run trainer main_loop and return trainer. This method is static so
-        it can be used in parallel execution.
+        Run trainer main_loop and score the resulting model. This is a
+        static method so it can be used in parallel.
 
         Parameters
         ----------
         trainer : Train
             Trainer.
-        time_budget : int, optional
-            The maximum number of seconds before interrupting
-            training. Default is `None`, no time limit.
+        monitor_channel : str
+            Monitor channel to use to compare models.
+        higher_is_better : bool, optional (default False)
+            Whether higher monitor_channel values correspond to better
+            models.
         """
         trainer.main_loop(time_budget)
-
-        # reduce memory usage
-
-        # reduce memory footprint
-        # trained models are NOT returned to hub and will be lost if they
-        # are not saved by the main_loop of the trainer.
-        if isinstance(trainer, TrainCV):
-            trainers = trainer.trainers
-        else:
-            trainers = [trainer]
-        for trainer in trainers:
-            trainer.dataset = Empty()  # needed for save
-            trainer.algorithm = None
-            #monitor = trainer.model.monitor
-            #trainer.model = Empty()
-            #trainer.model.monitor = monitor
-        gc.collect()
-        compressed = zlib.compress(serial.to_string(trainer))
-        return compressed
-
-        return trainer
-
-    @staticmethod
-    def get_models(trainer, channel_name=None, higher_is_better=False):
-        """
-        Extract the model from this trainer, possibly taking the best model
-        from MonitorBasedSaveBest.
-
-        Parameters
-        ----------
-        trainer : Train or TrainCV
-            Trainer.
-        channel_name : str, optional
-            Monitor channel to match in MonitorBasedSaveBest.
-        higher_is_better : bool, optional
-            Whether higher channel values indicate better models (default
-            False).
-        """
-        if isinstance(trainer, TrainCV):
-            trainers = trainer.trainers
-        else:
-            trainers = [trainer]
-        models = []
-        for trainer in trainers:
-            model = None
-            for extension in trainer.extensions:
-                if (isinstance(extension, MonitorBasedSaveBest) and
-                        extension.channel_name == channel_name):
-
-                    # These are assertions and not part of the conditional
-                    # since failures are likely to indicate errors in the
-                    # input YAML.
-                    assert extension.higher_is_better == higher_is_better
-                    assert extension.store_best_model
-                    model = extension.best_model
-                    break
-            if model is None:
-                model = trainer.model
-            models.append(model)
-        return models
-
-    @staticmethod
-    def get_scores(models, channel_name):
-        """
-        Get scores for models.
-
-        Parameters
-        ----------
-        model : Model
-            Model.
-        channel_name : str
-            Monitor channel.
-        """
-        scores = []
-        for model in models:
-            monitor = model.monitor
-            score = monitor.channels[channel_name].val_record[-1]
-            scores.append(score)
-        scores = np.asarray(scores)
+        models = get_models(trainer, monitor_channel, higher_is_better)
+        scores = get_scores(models, monitor_channel)
         return scores
 
     def get_best_params(self):
@@ -354,7 +259,10 @@ class GridSearch(object):
             if self.save_path is not None:
                 for i, params in enumerate(best_params):
                     for key in ['save_path', 'best_save_path']:
-                        val = params[key]
+                        try:
+                            val = params[key]
+                        except KeyError:
+                            continue
                         prefix, ext = os.path.splitext(val)
                         prefix += '-retrain'
                         best_params[i][key] = prefix + ext
@@ -470,20 +378,20 @@ class GridSearchCV(GridSearch):
         {'n': [1, 2, 3]} (when no %(n)s field exists in the template) will
         cause each model to be trained three times; useful when working
         with stochastic models.
+    monitor_channel : str
+        Monitor channel to use to compare models.
+    higher_is_better : bool, optional (default False)
+        Whether higher monitor_channel values correspond to better models.
     save_path : str, optional
         Output filename for trained model(s). Also used (with modification)
         for individual models if template contains %(save_path)s or
         %(best_save_path)s fields.
     allow_overwrite : bool, optional (default True)
         Whether to overwrite pre-existing output file matching save_path.
-    monitor_channel : str, optional
-        Monitor channel to use to compare models.
-    higher_is_better : bool, optional (default False)
-        Whether higher monitor_channel values correspond to better models.
-    n_best : int, optional
-        Maximum number of models to save, ranked by monitor_channel value.
     retrain : bool, optional (default True)
         Whether to train the best model(s).
+    n_best : int, optional (default 1)
+        Maximum number of models to save, ranked by monitor_channel value.
     retrain_kwargs : dict, optional
         Keyword arguments to modify the template trainer prior to
         retraining. If not provided when retrain is True, the dataset is
@@ -491,14 +399,14 @@ class GridSearchCV(GridSearch):
         retrain_kwargs must contain 'dataset', which can be a Dataset or
         a dict containing at least a 'train' dataset.
     """
-    def __init__(self, template, param_grid, save_path=None,
-                 allow_overwrite=True, monitor_channel=None,
-                 higher_is_better=False, n_best=None, retrain=True,
-                 retrain_kwargs=None):
-        super(GridSearchCV, self).__init__(template, param_grid, save_path,
-                                           allow_overwrite, monitor_channel,
-                                           higher_is_better, n_best)
+    def __init__(self, template, param_grid, monitor_channel,
+                 higher_is_better=False, save_path=None, allow_overwrite=True,
+                 retrain=True, n_best=1, retrain_kwargs=None):
+        super(GridSearchCV, self).__init__(
+            template, param_grid, monitor_channel, higher_is_better, save_path,
+            allow_overwrite)
         self.retrain = retrain
+        self.n_best = n_best
         if retrain_kwargs is not None:
             assert 'dataset' in retrain_kwargs
             if isinstance(retrain_kwargs['dataset'], dict):
@@ -563,7 +471,7 @@ class GridSearchCV(GridSearch):
             client = Client(**client_kwargs)
             view = client.load_balanced_view()
             view.set_flags(**view_flags)
-            view.map_sync(self.train, trainers, [time_budget] * len(trainers))
+            view.map_sync(lambda t: t.main_loop(time_budget), trainers)
         else:
             for trainer in trainers:
                 trainer.main_loop(time_budget)
