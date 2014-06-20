@@ -209,10 +209,10 @@ class GridSearch(object):
         else:
             scores = []
             for trainer in self.get_trainers():
-                score = self.train_and_score(
+                this_scores = self.train_and_score(
                     trainer, self.monitor_channel, self.higher_is_better,
                     time_budget)
-                scores.append(score)
+                scores.append(this_scores)
                 self.write_progress(scores)
 
                 # cleanup
