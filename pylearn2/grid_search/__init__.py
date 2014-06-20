@@ -204,6 +204,7 @@ class GridSearch(object):
                 if len(this_scores) == 1:
                     this_scores, = this_scores
                 scores.append(this_scores)
+                self.write_progress(scores)
 
         else:
             scores = []
@@ -212,6 +213,7 @@ class GridSearch(object):
                     trainer, self.monitor_channel, self.higher_is_better,
                     time_budget)
                 scores.append(score)
+                self.write_progress(scores)
 
                 # cleanup
                 del trainer
@@ -219,6 +221,23 @@ class GridSearch(object):
 
         scores = np.asarray(scores)
         self.scores = scores
+
+    def write_progress(self, scores):
+        """
+        Write grid search progress to disk.
+
+        Parameters
+        ----------
+        scores : list
+            Scores.
+        """
+        if self.save_path is None:
+            return
+        prefix, ext = os.path.splitext(self.save_path)
+        filename = prefix + '-progress.txt'
+        with open(filename, 'wb') as f:
+            for i, score in enumerate(scores):
+                f.write('{}\t{}\n'.format(str(self.params[i]), str(score)))
 
     @staticmethod
     def train(trainer, time_budget=None):
