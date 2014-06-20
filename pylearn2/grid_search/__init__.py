@@ -281,19 +281,6 @@ class GridSearch(object):
             else:
                 best_scores = self.scores[sort][:self.n_best]
             best_params = self.params[sort][:self.n_best]
-
-            # update save_path and best_save_path for best_params
-            if self.save_path is not None:
-                for i, params in enumerate(best_params):
-                    for key in ['save_path', 'best_save_path']:
-                        try:
-                            val = params[key]
-                        except KeyError:
-                            continue
-                        prefix, ext = os.path.splitext(val)
-                        prefix += '-retrain'
-                        best_params[i][key] = prefix + ext
-
         self.best_scores = best_scores
         self.best_params = best_params
 
