@@ -39,7 +39,7 @@ class Model(object):
             extensions = []
         else:
             assert isinstance(extensions, list)
-            assert all(isinstance(extensions, ModelExtension) for extension in
+            assert all(isinstance(extension, ModelExtension) for extension in
                        extensions)
 
         self.__dict__.update(locals())
@@ -428,9 +428,12 @@ class Model(object):
     def get_input_source(self):
         """
         Returns a string, stating the source for the input. By default the
-        input source (when is the only one) is called 'features'.
+        model expects only one input source, which is called 'features'.
         """
-        return 'features'
+        if hasattr(self, 'input_source'):
+            return self.input_source
+        else:
+            return 'features'
 
     def get_target_source(self):
         """

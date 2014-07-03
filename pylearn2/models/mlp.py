@@ -18,6 +18,7 @@ from theano.compat.python2x import OrderedDict
 from theano.gof.op import get_debug_values
 from theano.printing import Print
 from theano.sandbox.rng_mrg import MRG_RandomStreams
+from theano.tensor.signal.downsample import max_pool_2d
 import theano.tensor as T
 
 from pylearn2.costs.mlp import Default
@@ -40,6 +41,7 @@ from pylearn2.utils import safe_zip
 from pylearn2.utils import safe_izip
 from pylearn2.utils import sharedX
 from pylearn2.utils import wraps
+from pylearn2.utils.data_specs import DataSpecsMapping
 
 from pylearn2.expr.nnet import (elemwise_kl, kl, compute_precision,
                                     compute_recall, compute_f1)
@@ -408,6 +410,11 @@ class MLP(Layer):
         A Space specifying the kind of input the MLP accepts. If None,
         input space is specified by nvis. Should be None if the MLP is
         part of another MLP.
+    input_source : string or (nested) tuple of strings, optional
+        A (nested) tuple of strings specifiying the input sources this
+        MLP accepts. The structure should match that of input_space. The
+        default is 'features'. Note that this argument is ignored when
+        the MLP is nested.
     layer_name : name of the MLP layer. Should be None if the MLP is
         not part of another MLP.
     seed : WRITEME
@@ -416,7 +423,8 @@ class MLP(Layer):
     """
 
     def __init__(self, layers, batch_size=None, input_space=None,
-                 nvis=None, seed=None, layer_name=None, **kwargs):
+                 input_source='features', nvis=None, seed=None,
+                 layer_name=None, **kwargs):
         super(MLP, self).__init__(**kwargs)
 
         self.seed = seed
@@ -438,14 +446,15 @@ class MLP(Layer):
 
             self.layer_names.add(layer.layer_name)
 
-
-
         self.layers = layers
 
         self.batch_size = batch_size
         self.force_batch_size = batch_size
 
+        self._input_source = input_source
+
         if input_space is not None or nvis is not None:
+            self._nested = False
             self.setup_rng()
 
             # check if the layer_name is None (the MLP is the outer MLP)
@@ -454,9 +463,21 @@ class MLP(Layer):
             if nvis is not None:
                 input_space = VectorSpace(nvis)
 
+            # Check whether the input_space and input_source structures match
+            try:
+                DataSpecsMapping((input_space, input_source))
+            except ValueError:
+                raise ValueError("The structures of `input_space`, %s, and "
+                                 "`input_source`, %s do not match. If you "
+                                 "specified a CompositeSpace as an input, "
+                                 "be sure to specify the data sources as well."
+                                 % (input_space, input_source))
+
             self.input_space = input_space
 
             self._update_layer_input_spaces()
+        else:
+            self._nested = True
 
         self.freeze_set = set([])
 
@@ -465,12 +486,18 @@ class MLP(Layer):
                 return None
             return 1. / x
 
+    @property
+    def input_source(self):
+        assert not self._nested, "A nested MLP does not have an input source"
+        return self._input_source
+
     def setup_rng(self):
         """
         .. todo::
 
             WRITEME
         """
+        assert not self._nested, "Nested MLPs should use their parent's RNG"
         if self.seed is None:
             self.seed = [2013, 1, 4]
 
@@ -490,6 +517,7 @@ class MLP(Layer):
     def set_input_space(self, space):
 
         if hasattr(self, "mlp"):
+            assert self._nested
             self.rng = self.mlp.rng
             self.batch_size = self.mlp.batch_size
 
@@ -691,8 +719,9 @@ class MLP(Layer):
         for layer, coeff in safe_izip(self.layers, coeffs):
             if coeff != 0.:
                 layer_costs += [layer.get_weight_decay(coeff)]
-            else:
-                layer_costs += [0.]
+
+        if len(layer_costs) == 0:
+            return T.constant(0, dtype=config.floatX)
 
         total_cost = reduce(lambda x, y: x + y, layer_costs)
 
@@ -709,8 +738,9 @@ class MLP(Layer):
         for layer, coeff in safe_izip(self.layers, coeffs):
             if coeff != 0.:
                 layer_costs += [layer.get_l1_weight_decay(coeff)]
-            else:
-                layer_costs += [0.]
+
+        if len(layer_costs) == 0:
+            return T.constant(0, dtype=config.floatX)
 
         total_cost = reduce(lambda x, y: x + y, layer_costs)
 
@@ -3671,6 +3701,15 @@ def max_pool(bc01, pool_shape, pool_stride, image_shape):
     assert pr <= r
     assert pc <= c
 
+    name = bc01.name
+    if name is None:
+        name = 'anon_bc01'
+
+    if pool_shape == pool_stride:
+        mx = max_pool_2d(bc01, pool_shape, False)
+        mx.name = 'max_pool('+name+')'
+        return mx
+
     # Compute index in pooled space of last needed pool
     # (needed = each input pixel must appear in at least one pool)
     def last_pool(im_shp, p_shp, p_strd):
@@ -3700,10 +3739,6 @@ def max_pool(bc01, pool_shape, pool_stride, image_shape):
                             bc01.shape[1],
                             required_r,
                             required_c)
-
-    name = bc01.name
-    if name is None:
-        name = 'anon_bc01'
 
     bc01 = T.set_subtensor(wide_infinity[:, :, 0:r, 0:c], bc01)
     bc01.name = 'infinite_padded_' + name
@@ -4252,9 +4287,9 @@ class CompositeLayer(Layer):
         The name of this layer
     layers : tuple or list
         The component layers to run in parallel.
-    inputs_to_components : dict mapping int to list of ints, optional
+    inputs_to_layers : dict mapping int to list of ints, optional
         Can only be used if the input space is a CompositeSpace.
-        If inputs_to_components[i] contains j, it means input i will
+        If inputs_to_layers[i] contains j, it means input i will
         be given as input to component j. Note that if multiple inputs are
         passed on to e.g. an inner CompositeLayer, the same order will
         be maintained. If the list is empty, the input will be discarded.
@@ -4266,7 +4301,7 @@ class CompositeLayer(Layer):
     >>> composite_layer = CompositeLayer(
     ...     layer_name='composite_layer',
     ...     layers=[Tanh(7, 'h0', 0.1), Sigmoid(5, 'h1', 0.1)],
-    ...     inputs_to_components={
+    ...     inputs_to_layers={
     ...         0: [1],
     ...         1: [0]
     ...     })
@@ -4280,8 +4315,8 @@ class CompositeLayer(Layer):
     ...     layers=[Linear(9, 'h2', 0.1),
     ...             composite_layer,
     ...             Tanh(7, 'h3', 0.1)],
-    ...     inputs_to_components={
-    ...         0: [0],
+    ...     inputs_to_layers={
+    ...         0: [1],
     ...         2: []
     ...     })
 
@@ -4387,7 +4422,7 @@ class CompositeLayer(Layer):
             assert all(layer_coeff >= 0 for layer_coeff in coeff)
             return T.sum([getattr(layer, method_name)(layer_coeff) for
                           layer, layer_coeff in safe_zip(self.layers, coeff)
-                          if layer_coeff > 0])
+                          if layer_coeff > 0], dtype=config.floatX)
         else:
             raise TypeError("CompositeLayer's " + method_name + " received "
                             "coefficients of type " + str(type(coeff)) + " "
